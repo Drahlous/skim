@@ -1,3 +1,3 @@
-module example/user/hello
+module example/user/skim
 
 go 1.18
