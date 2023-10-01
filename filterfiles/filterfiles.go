@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 )
 
 /*
@@ -61,4 +62,19 @@ func ReadFilterFile(filter_file_path string) (TextAnalysisToolSettings, error) {
 	}
 
 	return textAnalysisToolSettings, nil
+}
+
+func CompileFilterRegularExpressions(filterSettings TextAnalysisToolSettings) ([]regexp.Regexp, error) {
+	var patterns []regexp.Regexp
+
+	for _, filter := range filterSettings.Filters {
+		pattern, err := regexp.Compile(filter.Text)
+		if err != nil {
+			fmt.Println(err)
+			return patterns, err
+		}
+		patterns = append(patterns, *pattern)
+	}
+
+	return patterns, nil
 }

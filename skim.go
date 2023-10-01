@@ -4,28 +4,28 @@ import (
 	"bufio"
 	"example/user/skim/filterfiles"
 	"fmt"
+	"os"
 	"regexp"
 )
 
-// Path of xml filter file
-const FILTER_FILE = "./examples/simple_filter.tat"
+// Path of log file
+const LOG_FILE = "./examples/simple.log"
 
-func GetMatchingLines(pattern string, scanner bufio.Scanner) {
-	// Compile a single debug pattern.
-	// TODO: Read a list of patterns from a file
-	debug_pattern, err := regexp.Compile("debug")
-	if err != nil {
-		return
-	}
+// Path of xml filter file
+const FILTER_FILE = "./examples/simple_filter_two.tat"
+
+func GetMatchingLines(patterns []regexp.Regexp, scanner *bufio.Scanner) {
 
 	// Read line-by-line
-	// TODO: Allow the user to specify a logfile
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		// Check whether the line matches our debug regex
-		if debug_pattern.MatchString(line) {
-			fmt.Println("Found line matching pattern: ", line)
+		for _, pattern := range patterns {
+
+			// Check whether the line matches our debug regex
+			if pattern.MatchString(line) {
+				fmt.Println("Found line matching pattern: ", line)
+			}
 		}
 	}
 }
@@ -41,7 +41,21 @@ func main() {
 	// Print the parsed TAT filter settings
 	fmt.Println("TextAnalysisTool Version: " + filterSettings.Version)
 	fmt.Println("TextAnalysisTool showOnlyFilteredLines: " + filterSettings.ShowOnlyFilteredLines)
-	for _, filter := range filterSettings.Filters {
-		fmt.Println("filter text: " + filter.Text)
+
+	// Compile the extracted filters into regular expressions
+	patterns, err := filterfiles.CompileFilterRegularExpressions(filterSettings)
+	if err != nil {
+		fmt.Println(err)
+		return
 	}
+
+	// Read the log file line-by-line
+	logfile, err := os.Open(LOG_FILE)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	scanner := bufio.NewScanner(logfile)
+
+	GetMatchingLines(patterns, scanner)
 }
