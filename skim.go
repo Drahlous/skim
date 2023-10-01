@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"example/user/skim/filterfiles"
+	"flag"
 	"fmt"
 	"os"
 	"regexp"
@@ -31,8 +32,14 @@ func GetMatchingLines(patterns []regexp.Regexp, scanner *bufio.Scanner) {
 }
 
 func main() {
+
+	var filter_file = *flag.String("filter", "./examples/simple_filter.tat", "supply the path to a TAT filter file")
+	var log_file = *flag.String("log", "./examples/simple.log", "supply the path to the input log file")
+
+	flag.Parse()
+
 	// Read filter settings from the XML file
-	filterSettings, err := filterfiles.ReadFilterFile(FILTER_FILE)
+	filterSettings, err := filterfiles.ReadFilterFile(filter_file)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -50,7 +57,7 @@ func main() {
 	}
 
 	// Read the log file line-by-line
-	logfile, err := os.Open(LOG_FILE)
+	logfile, err := os.Open(log_file)
 	if err != nil {
 		fmt.Println(err)
 		return
