@@ -14,10 +14,12 @@ import (
 
 // Model to store the application's state
 type model struct {
-	cursor  int // which filter our cursor is pointing at
-	filters []filterfiles.Filter
-	lines   []string
-	table   table.Model
+	cursor     int  // which filter our cursor is pointing at
+	log_cursor int  // which log line our cursor is pointing at
+	log_focus  bool // whether the log view is focussed
+	filters    []filterfiles.Filter
+	lines      []string
+	table      table.Model
 }
 
 var baseStyle = lipgloss.NewStyle().
@@ -56,6 +58,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	// Is it a key press?
 	case tea.KeyMsg:
+		var cursor *int
+		var cursor_max int
+		if m.log_focus {
+			cursor = &m.log_cursor
+            // TODO: set this based on the visible lines instead of all lines
+			cursor_max = len(m.lines) - 1
+		} else {
+			cursor = &m.cursor
+			cursor_max = len(m.filters) - 1
+		}
 
 		// Which key was pressed?
 		switch msg.String() {
@@ -66,21 +78,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// "up" and "k" move the cursor up
 		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
+			if *cursor > 0 {
+				*cursor--
 			}
 
 		// Move the cursor down
 		case "down", "j":
-			if m.cursor < len(m.filters)-1 {
-				m.cursor++
+			if *cursor < cursor_max {
+				*cursor++
 			}
 
 			// Enter and spacebar toggle the selected state for the item under the cursor
 		case "enter", " ":
 			filter := &m.filters[m.cursor]
 			filter.IsEnabled = !filter.IsEnabled
+
+		case "tab":
+			m.log_focus = !m.log_focus
 		}
+
 	}
 	return m, nil
 }
@@ -117,8 +133,11 @@ func makeFilteredTable(m model) table.Model {
 		table.WithColumns(columns),
 		table.WithRows(rows),
 		table.WithFocused(true),
-		table.WithHeight(7),
+		table.WithHeight(20),
 	)
+
+    // Move the view to the location of the log cursor
+	t.MoveDown(m.log_cursor)
 
 	style := table.DefaultStyles()
 	style.Header = style.Header.
