@@ -154,8 +154,16 @@ func (m model) View() string {
 			checked = "x" // this item is selected
 		}
 
-		// Render the row
-		s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, filter.XML.Text)
+		var style = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#000000")).
+			Background(lipgloss.Color(m.filters[i].BackColor)).
+			PaddingTop(0).
+			PaddingLeft(0)
+
+			// Render the row
+		row := fmt.Sprintf("%s [%s] %s\n", cursor, checked, style.Render(filter.XML.Text))
+		s += row
 	}
 
 	// Footer

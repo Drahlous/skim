@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strings"
 )
 
 /*
@@ -44,6 +45,7 @@ type Filter struct {
 	XML       FilterXML
 	Regex     regexp.Regexp
 	IsEnabled bool
+	BackColor string
 }
 
 func ReadFilterFile(filter_file_path string) (TextAnalysisToolSettings, error) {
@@ -87,6 +89,8 @@ func makeFilter(XML FilterXML) (Filter, error) {
 	} else {
 		f.IsEnabled = false
 	}
+	f.BackColor = fmt.Sprintf("#%s", strings.ToUpper(f.XML.BackColor))
+
 	return f, nil
 }
 
