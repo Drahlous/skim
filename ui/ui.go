@@ -96,10 +96,19 @@ func makeFilteredTable(m model) table.Model {
 
 	for i, line := range m.lines {
 		// Do any filters match this line?
-		_, match := filterfiles.GetMatchingFilter(m.filters, line)
+		filter, match := filterfiles.GetMatchingFilter(m.filters, line)
 		if match == true {
+
+			// Style this log line with the color from the filter
+			var style = lipgloss.NewStyle().
+				Bold(false).
+				Foreground(lipgloss.Color("#000000")).
+				Background(lipgloss.Color(filter.BackColor)).
+				PaddingTop(0).
+				PaddingLeft(0)
+
 			// +1 Offset to make the first line number 1
-			row := table.Row{fmt.Sprintf("%d", i+1), line}
+			row := table.Row{fmt.Sprintf("%d", i+1), style.Render(line)}
 			rows = append(rows, row)
 		}
 	}
