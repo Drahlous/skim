@@ -1,6 +1,7 @@
 package filterfiles
 
 import (
+	"bufio"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -24,10 +25,10 @@ type TextAnalysisToolSettings struct {
 	Version               string   `xml:"version,attr"`
 	ShowOnlyFilteredLines string   `xml:"showOnlyFilteredLines,attr"`
 	// Array of all Filters in the file
-	Filters []Filter `xml:"filters>filter"`
+	Filters []FilterXML `xml:"filters>filter"`
 }
 
-type Filter struct {
+type FilterXML struct {
 	XMLName       xml.Name `xml:"filter"`
 	Enabled       string   `xml:"enabled,attr"`
 	Excluding     string   `xml:"excluding,attr"`
@@ -37,6 +38,11 @@ type Filter struct {
 	CaseSensitive string   `xml:"case_sensitive,attr"`
 	Regex         string   `xml:"regex,attr"`
 	Text          string   `xml:"text,attr"`
+}
+
+type Filter struct {
+	XML   FilterXML
+	Regex regexp.Regexp
 }
 
 func ReadFilterFile(filter_file_path string) (TextAnalysisToolSettings, error) {
@@ -64,17 +70,47 @@ func ReadFilterFile(filter_file_path string) (TextAnalysisToolSettings, error) {
 	return textAnalysisToolSettings, nil
 }
 
-func CompileFilterRegularExpressions(filterSettings TextAnalysisToolSettings) ([]regexp.Regexp, error) {
-	var patterns []regexp.Regexp
+func makeFilter(XML FilterXML) (Filter, error) {
 
-	for _, filter := range filterSettings.Filters {
-		pattern, err := regexp.Compile(filter.Text)
+	var f Filter
+
+	regex, err := regexp.Compile(XML.Text)
+	if err != nil {
+		fmt.Println(err)
+		return f, err
+	}
+	f.Regex = *regex
+	return f, nil
+}
+
+func CompileFilterRegularExpressions(filterSettings TextAnalysisToolSettings) ([]Filter, error) {
+	var filters []Filter
+
+	for _, XMLFilter := range filterSettings.Filters {
+		f, err := makeFilter(XMLFilter)
 		if err != nil {
 			fmt.Println(err)
-			return patterns, err
+			return filters, err
 		}
-		patterns = append(patterns, *pattern)
+		filters = append(filters, f)
 	}
 
-	return patterns, nil
+	return filters, nil
+}
+
+func GetMatchingLines(filters []Filter, scanner *bufio.Scanner) {
+
+	// Read line-by-line
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		for _, filter := range filters {
+
+			re := filter.Regex
+			// Check whether the line matches our debug regex
+			if re.MatchString(line) {
+				fmt.Println("Found line matching pattern: ", line)
+			}
+		}
+	}
 }
