@@ -1,12 +1,17 @@
 # skim
+
 Tool for skimming plaintext log files, like TextAnalysisTool or glogg.
 
+## Screenshots
 
-## UI
+![Skim example usage](./screenshots/skim.png)
 
-### Potential Libraries
+## Usage
 
-- [bubbletea](https://github.com/charmbracelet/bubbletea)
-    - Good for making pretty terminal apps in Go
-    - Example code for [split-editors](https://github.com/charmbracelet/bubbletea/tree/master/examples/split-editors)
-
+```text
+Usage of skim:
+  -filter string
+        supply the path to a TAT filter file (default "./examples/simple_filter_two.tat")
+  -log string
+        supply the path to the input log file (default "./examples/simple_longer.log")
+```
