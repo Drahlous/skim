@@ -9,7 +9,7 @@ import (
 )
 
 // Path of log file
-const LOG_FILE = "./examples/simple.log"
+const LOG_FILE = "./examples/simple_longer.log"
 
 // Path of xml filter file
 const FILTER_FILE = "./examples/simple_filter_two.tat"

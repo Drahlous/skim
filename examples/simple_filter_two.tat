@@ -3,5 +3,6 @@
   <filters>
     <filter enabled="y" excluding="n" description="" backColor="87cefa" type="matches_text" case_sensitive="n" regex="y" text="^debug" />
     <filter enabled="y" excluding="n" description="" backColor="ff0000" type="matches_text" case_sensitive="n" regex="y" text="goodbye" />
+    <filter enabled="y" excluding="n" description="" backColor="90ee90" type="matches_text" case_sensitive="n" regex="y" text="Hello" />
   </filters>
 </TextAnalysisTool.NET>
