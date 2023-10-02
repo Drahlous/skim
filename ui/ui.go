@@ -64,7 +64,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Enter and spacebar toggle the selected state for the item under the cursor
 		case "enter", " ":
-			filter := m.filters[m.cursor]
+			filter := &m.filters[m.cursor]
 			if filter.XML.IsEnabled == "y" {
 				filter.XML.IsEnabled = "n"
 			} else {
