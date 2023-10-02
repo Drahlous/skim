@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"example/user/skim/filterfiles"
+	"example/user/skim/ui"
 	"flag"
 	"fmt"
 	"os"
@@ -65,4 +66,6 @@ func main() {
 	scanner := bufio.NewScanner(logfile)
 
 	GetMatchingLines(patterns, scanner)
+
+	ui.RunUI()
 }
