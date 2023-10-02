@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"example/user/skim/filterfiles"
 	"example/user/skim/ui"
-	"flag"
 	"fmt"
 	"os"
 )
@@ -17,10 +16,13 @@ const FILTER_FILE = "./examples/simple_filter_two.tat"
 
 func main() {
 
-	var filter_file = *flag.String("filter", "./examples/simple_filter.tat", "supply the path to a TAT filter file")
-	var log_file = *flag.String("log", "./examples/simple.log", "supply the path to the input log file")
+	//var filter_file = *flag.String("filter", "./examples/simple_filter_two.tat", "supply the path to a TAT filter file")
+	//var log_file = *flag.String("log", "./examples/simple.log", "supply the path to the input log file")
 
-	flag.Parse()
+	//flag.Parse()
+
+	filter_file := FILTER_FILE
+	log_file := LOG_FILE
 
 	// Read filter settings from the XML file
 	filterSettings, err := filterfiles.ReadFilterFile(filter_file)
@@ -50,5 +52,5 @@ func main() {
 
 	filterfiles.GetMatchingLines(filters, scanner)
 
-	ui.RunUI()
+	ui.RunUI(filters)
 }

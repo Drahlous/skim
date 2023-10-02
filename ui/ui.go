@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"example/user/skim/filterfiles"
 	"fmt"
 	"os"
 
@@ -10,21 +11,14 @@ import (
 
 // Model to store the application's state
 type model struct {
-	choices  []string         // items in the to-do list
-	cursor   int              // which to-do list item our cursor is pointing at
-	selected map[int]struct{} // which to-do items are selected
+	cursor  int // which filter our cursor is pointing at
+	filters []filterfiles.Filter
 }
 
 // Define the initial state for the application
-func initialModel() model {
+func initialModel(filters []filterfiles.Filter) model {
 	return model{
-		// This example to-do list is a grocery list
-		choices: []string{"Buy carrots", "Buy celery", "Buy kohlrabi"},
-
-		// This map indicates which choices are currently selected.
-		// Here we're using the map like a mathematical set.
-		// Keys refer to the indexes of the `choices` slice defined above.
-		selected: make(map[int]struct{}),
+		filters: filters,
 	}
 }
 
@@ -64,17 +58,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Move the cursor down
 		case "down", "j":
-			if m.cursor < len(m.choices)-1 {
+			if m.cursor < len(m.filters)-1 {
 				m.cursor++
 			}
 
 			// Enter and spacebar toggle the selected state for the item under the cursor
 		case "enter", " ":
-			_, ok := m.selected[m.cursor]
-			if ok {
-				delete(m.selected, m.cursor)
+			filter := m.filters[m.cursor]
+			if filter.XML.IsEnabled == "y" {
+				filter.XML.IsEnabled = "n"
 			} else {
-				m.selected[m.cursor] = struct{}{}
+				filter.XML.IsEnabled = "y"
 			}
 		}
 	}
@@ -86,25 +80,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // Bubble Tea takes care of redrawing and other logic.
 func (m model) View() string {
 	// Header
-	s := "What should we buy at the market?\n\n"
+	s := "Filters\n\n"
 
-	// Iterate over choices
-	for i, choice := range m.choices {
+	// Iterate over filters
+	for i, filter := range m.filters {
 
-		// Is the cursor pointing at this choice?
+		// Is the cursor pointing at this filter?
 		cursor := " " // no cursor
 		if m.cursor == i {
 			cursor = ">" // cursor is present
 		}
 
-		// Is this choice selected?
+		// Is this filter enabled?
 		checked := " " // not selected
-		if _, ok := m.selected[i]; ok {
+		if "y" == m.filters[i].XML.IsEnabled {
 			checked = "x" // this item is selected
 		}
 
 		// Render the row
-		s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice)
+		s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, filter.XML.Text)
 	}
 
 	// Footer
@@ -115,8 +109,8 @@ func (m model) View() string {
 }
 
 // Run the program by passing the initial model to tea.NewProgram, then run
-func RunUI() {
-	p := tea.NewProgram(initialModel())
+func RunUI(filters []filterfiles.Filter) {
+	p := tea.NewProgram(initialModel(filters))
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("An error occured: %v", err)
 		os.Exit(1)

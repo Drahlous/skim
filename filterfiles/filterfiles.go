@@ -29,15 +29,15 @@ type TextAnalysisToolSettings struct {
 }
 
 type FilterXML struct {
-	XMLName       xml.Name `xml:"filter"`
-	Enabled       string   `xml:"enabled,attr"`
-	Excluding     string   `xml:"excluding,attr"`
-	Description   string   `xml:"description,attr"`
-	BackColor     string   `xml:"backColor,attr"`
-	Type          string   `xml:"type,attr"`
-	CaseSensitive string   `xml:"case_sensitive,attr"`
-	Regex         string   `xml:"regex,attr"`
-	Text          string   `xml:"text,attr"`
+	XMLName         xml.Name `xml:"filter"`
+	IsEnabled       string   `xml:"enabled,attr"`
+	IsExcluding     string   `xml:"excluding,attr"`
+	Description     string   `xml:"description,attr"`
+	BackColor       string   `xml:"backColor,attr"`
+	Type            string   `xml:"type,attr"`
+	IsCaseSensitive string   `xml:"case_sensitive,attr"`
+	IsRegex         string   `xml:"regex,attr"`
+	Text            string   `xml:"text,attr"`
 }
 
 type Filter struct {
@@ -80,6 +80,7 @@ func makeFilter(XML FilterXML) (Filter, error) {
 		return f, err
 	}
 	f.Regex = *regex
+	f.XML = XML
 	return f, nil
 }
 
