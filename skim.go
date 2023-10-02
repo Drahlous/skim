@@ -4,25 +4,12 @@ import (
 	"bufio"
 	"example/user/skim/filterfiles"
 	"example/user/skim/ui"
+	"flag"
 	"fmt"
 	"os"
 )
 
-// Path of log file
-const LOG_FILE = "./examples/simple_longer.log"
-
-// Path of xml filter file
-const FILTER_FILE = "./examples/simple_filter_two.tat"
-
-func main() {
-
-	//var filter_file = *flag.String("filter", "./examples/simple_filter_two.tat", "supply the path to a TAT filter file")
-	//var log_file = *flag.String("log", "./examples/simple.log", "supply the path to the input log file")
-
-	//flag.Parse()
-
-	filter_file := FILTER_FILE
-	log_file := LOG_FILE
+func run(filter_file string, log_file string) {
 
 	// Read filter settings from the XML file
 	filterSettings, err := filterfiles.ReadFilterFile(filter_file)
@@ -30,10 +17,6 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-
-	// Print the parsed TAT filter settings
-	//fmt.Println("TextAnalysisTool Version: " + filterSettings.Version)
-	//fmt.Println("TextAnalysisTool showOnlyFilteredLines: " + filterSettings.ShowOnlyFilteredLines)
 
 	// Compile the extracted filters into regular expressions
 	filters, err := filterfiles.CompileFilterRegularExpressions(filterSettings)
@@ -51,4 +34,15 @@ func main() {
 	scanner := bufio.NewScanner(logfile)
 
 	ui.RunUI(filters, scanner)
+}
+
+func main() {
+
+	// Parse Command Line Options
+	filter_file := flag.String("filter", "./examples/simple_filter_two.tat", "supply the path to a TAT filter file")
+	log_file := flag.String("log", "./examples/simple_longer.log", "supply the path to the input log file")
+	flag.Parse()
+
+	// Run the program
+	run(*filter_file, *log_file)
 }
