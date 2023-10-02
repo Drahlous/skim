@@ -29,20 +29,21 @@ type TextAnalysisToolSettings struct {
 }
 
 type FilterXML struct {
-	XMLName         xml.Name `xml:"filter"`
-	IsEnabled       string   `xml:"enabled,attr"`
-	IsExcluding     string   `xml:"excluding,attr"`
-	Description     string   `xml:"description,attr"`
-	BackColor       string   `xml:"backColor,attr"`
-	Type            string   `xml:"type,attr"`
-	IsCaseSensitive string   `xml:"case_sensitive,attr"`
-	IsRegex         string   `xml:"regex,attr"`
-	Text            string   `xml:"text,attr"`
+	XMLName       xml.Name `xml:"filter"`
+	Enabled       string   `xml:"enabled,attr"`
+	Excluding     string   `xml:"excluding,attr"`
+	Description   string   `xml:"description,attr"`
+	BackColor     string   `xml:"backColor,attr"`
+	Type          string   `xml:"type,attr"`
+	CaseSensitive string   `xml:"case_sensitive,attr"`
+	Regex         string   `xml:"regex,attr"`
+	Text          string   `xml:"text,attr"`
 }
 
 type Filter struct {
-	XML   FilterXML
-	Regex regexp.Regexp
+	XML       FilterXML
+	Regex     regexp.Regexp
+	IsEnabled bool
 }
 
 func ReadFilterFile(filter_file_path string) (TextAnalysisToolSettings, error) {
@@ -77,8 +78,15 @@ func makeFilter(XML FilterXML) (Filter, error) {
 		fmt.Println(err)
 		return f, err
 	}
-	f.Regex = *regex
 	f.XML = XML
+
+	// Translate individual fields for ease of use
+	f.Regex = *regex
+	if f.XML.Enabled == "y" {
+		f.IsEnabled = true
+	} else {
+		f.IsEnabled = false
+	}
 	return f, nil
 }
 
@@ -102,7 +110,7 @@ func GetMatchingFilter(filters []Filter, line string) (Filter, bool) {
 	for _, filter := range filters {
 
 		// Only continue if this filter is enabled
-		if filter.XML.IsEnabled == "n" {
+		if !filter.IsEnabled {
 			continue
 		}
 

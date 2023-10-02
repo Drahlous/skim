@@ -72,11 +72,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Enter and spacebar toggle the selected state for the item under the cursor
 		case "enter", " ":
 			filter := &m.filters[m.cursor]
-			if filter.XML.IsEnabled == "y" {
-				filter.XML.IsEnabled = "n"
-			} else {
-				filter.XML.IsEnabled = "y"
-			}
+			filter.IsEnabled = !filter.IsEnabled
 		}
 	}
 	return m, nil
@@ -111,7 +107,7 @@ func (m model) View() string {
 
 		// Is this filter enabled?
 		checked := " " // not selected
-		if "y" == m.filters[i].XML.IsEnabled {
+		if m.filters[i].IsEnabled {
 			checked = "x" // this item is selected
 		}
 
@@ -128,7 +124,7 @@ func (m model) View() string {
 
 // Run the program by passing the initial model to tea.NewProgram, then run
 func RunUI(filters []filterfiles.Filter, scanner *bufio.Scanner) {
-	p := tea.NewProgram(initialModel(filters, scanner))
+	p := tea.NewProgram(initialModel(filters, scanner), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("An error occured: %v", err)
 		os.Exit(1)
