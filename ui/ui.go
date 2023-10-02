@@ -7,7 +7,9 @@ import (
 	"os"
 
 	// We'll shorten the package name to "tea" for ease of use
+	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Model to store the application's state
@@ -15,7 +17,12 @@ type model struct {
 	cursor  int // which filter our cursor is pointing at
 	filters []filterfiles.Filter
 	lines   []string
+	table   table.Model
 }
+
+var baseStyle = lipgloss.NewStyle().
+	BorderStyle(lipgloss.NormalBorder()).
+	BorderForeground(lipgloss.Color("240"))
 
 // Define the initial state for the application
 func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner) model {
@@ -82,16 +89,45 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // The returned string is our UI.
 // Bubble Tea takes care of redrawing and other logic.
 func (m model) View() string {
-	// Logfile Lines
-	s := "Lines\n"
 
-	for _, line := range m.lines {
+	columns := []table.Column{
+		{Title: "#", Width: 4},
+		{Title: "Line", Width: 100},
+	}
+
+	rows := []table.Row{}
+
+	for i, line := range m.lines {
 		// Do any filters match this line?
 		_, match := filterfiles.GetMatchingFilter(m.filters, line)
 		if match == true {
-			s += fmt.Sprintf("%s\n", line)
+			// +1 Offset to make the first line number 1
+			row := table.Row{fmt.Sprintf("%d", i+1), line}
+			rows = append(rows, row)
 		}
 	}
+
+	t := table.New(
+		table.WithColumns(columns),
+		table.WithRows(rows),
+		table.WithFocused(true),
+		table.WithHeight(7),
+	)
+
+	style := table.DefaultStyles()
+	style.Header = style.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		BorderBottom(true).
+		Bold(false)
+	style.Selected = style.Selected.
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("57")).
+		Bold(false)
+
+	m.table = t
+
+	s := baseStyle.Render(m.table.View()) + "\n"
 
 	// Filters
 	s += "\nFilters\n\n"
