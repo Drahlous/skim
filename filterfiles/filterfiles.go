@@ -55,8 +55,6 @@ func ReadFilterFile(filter_file_path string) (TextAnalysisToolSettings, error) {
 		return textAnalysisToolSettings, err
 	}
 
-	fmt.Println("Successfully opened ", filter_file_path)
-
 	// defer the closing of our xml file so we can parse it later
 	defer xmlFile.Close()
 
@@ -97,6 +95,24 @@ func CompileFilterRegularExpressions(filterSettings TextAnalysisToolSettings) ([
 	}
 
 	return filters, nil
+}
+
+func GetMatchingFilter(filters []Filter, line string) (Filter, bool) {
+	var filter Filter
+	for _, filter := range filters {
+
+		// Only continue if this filter is enabled
+		if filter.XML.IsEnabled == "n" {
+			continue
+		}
+
+		// Check whether the line matches the filter's regex
+		re := filter.Regex
+		if re.MatchString(line) {
+			return filter, true
+		}
+	}
+	return filter, false
 }
 
 func GetMatchingLines(filters []Filter, scanner *bufio.Scanner) {

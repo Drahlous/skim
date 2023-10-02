@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bufio"
 	"example/user/skim/filterfiles"
 	"fmt"
 	"os"
@@ -13,12 +14,18 @@ import (
 type model struct {
 	cursor  int // which filter our cursor is pointing at
 	filters []filterfiles.Filter
+	lines   []string
 }
 
 // Define the initial state for the application
-func initialModel(filters []filterfiles.Filter) model {
+func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner) model {
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
 	return model{
 		filters: filters,
+		lines:   lines,
 	}
 }
 
@@ -79,8 +86,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // The returned string is our UI.
 // Bubble Tea takes care of redrawing and other logic.
 func (m model) View() string {
-	// Header
-	s := "Filters\n\n"
+	// Logfile Lines
+	s := "Lines\n"
+
+	for _, line := range m.lines {
+		// Do any filters match this line?
+		_, match := filterfiles.GetMatchingFilter(m.filters, line)
+		if match == true {
+			s += fmt.Sprintf("%s\n", line)
+		}
+	}
+
+	// Filters
+	s += "\nFilters\n\n"
 
 	// Iterate over filters
 	for i, filter := range m.filters {
@@ -109,8 +127,8 @@ func (m model) View() string {
 }
 
 // Run the program by passing the initial model to tea.NewProgram, then run
-func RunUI(filters []filterfiles.Filter) {
-	p := tea.NewProgram(initialModel(filters))
+func RunUI(filters []filterfiles.Filter, scanner *bufio.Scanner) {
+	p := tea.NewProgram(initialModel(filters, scanner))
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("An error occured: %v", err)
 		os.Exit(1)

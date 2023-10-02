@@ -32,8 +32,8 @@ func main() {
 	}
 
 	// Print the parsed TAT filter settings
-	fmt.Println("TextAnalysisTool Version: " + filterSettings.Version)
-	fmt.Println("TextAnalysisTool showOnlyFilteredLines: " + filterSettings.ShowOnlyFilteredLines)
+	//fmt.Println("TextAnalysisTool Version: " + filterSettings.Version)
+	//fmt.Println("TextAnalysisTool showOnlyFilteredLines: " + filterSettings.ShowOnlyFilteredLines)
 
 	// Compile the extracted filters into regular expressions
 	filters, err := filterfiles.CompileFilterRegularExpressions(filterSettings)
@@ -50,7 +50,5 @@ func main() {
 	}
 	scanner := bufio.NewScanner(logfile)
 
-	filterfiles.GetMatchingLines(filters, scanner)
-
-	ui.RunUI(filters)
+	ui.RunUI(filters, scanner)
 }
