@@ -85,10 +85,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// The View method will simply look at the model and return a string.
-// The returned string is our UI.
-// Bubble Tea takes care of redrawing and other logic.
-func (m model) View() string {
+func makeFilteredTable(m model) table.Model {
 
 	columns := []table.Column{
 		{Title: "#", Width: 4},
@@ -125,9 +122,19 @@ func (m model) View() string {
 		Background(lipgloss.Color("57")).
 		Bold(false)
 
-	m.table = t
+	return t
+}
 
-	s := baseStyle.Render(m.table.View()) + "\n"
+// The View method will simply look at the model and return a string.
+// The returned string is our UI.
+// Bubble Tea takes care of redrawing and other logic.
+func (m model) View() string {
+
+	s := ""
+
+	// Make table of filtered log lines
+	m.table = makeFilteredTable(m)
+	s += baseStyle.Render(m.table.View()) + "\n"
 
 	// Filters
 	s += "\nFilters\n\n"
