@@ -20,6 +20,7 @@ type model struct {
 	filters      []filterfiles.Filter
 	lines        []string
 	table        table.Model
+	filterTable  table.Model
 	windowWidth  int
 	windowHeight int
 }
@@ -139,7 +140,7 @@ func makeFilteredTable(m model) table.Model {
 		table.WithRows(rows),
 		table.WithFocused(true),
 		// TODO: Replace hardcoded offset with the size of the filter section
-		table.WithHeight(m.windowHeight-15),
+		table.WithHeight(m.windowHeight-12),
 	)
 
 	// Move the view to the location of the log cursor
@@ -159,25 +160,16 @@ func makeFilteredTable(m model) table.Model {
 	return t
 }
 
-// The View method will simply look at the model and return a string.
-// The returned string is our UI.
-// Bubble Tea takes care of redrawing and other logic.
-func (m model) View() string {
+func makeFilters(m model) table.Model {
+	columns := []table.Column{
+		{Title: "", Width: 3},
+		{Title: "Regex", Width: m.windowWidth - 9}, // TODO: Avoid hardcoding this offset
+	}
 
-	s := ""
-
-	// Make table of filtered log lines
-	m.table = makeFilteredTable(m)
-	s += baseStyle.Render(m.table.View()) + "\n"
+	rows := []table.Row{}
 
 	// Iterate over filters
 	for i, filter := range m.filters {
-
-		// Is the cursor pointing at this filter?
-		cursor := " " // no cursor
-		if m.cursor == i {
-			cursor = ">" // cursor is present
-		}
 
 		// Is this filter enabled?
 		checked := " " // not selected
@@ -192,10 +184,35 @@ func (m model) View() string {
 			PaddingTop(0).
 			PaddingLeft(0)
 
-			// Render the row
-		row := fmt.Sprintf("%s [%s] %s\n", cursor, checked, style.Render(filter.XML.Text))
-		s += row
+		// Render the row
+		row := table.Row{fmt.Sprintf("[%s]", checked), style.Render(filter.XML.Text)}
+		rows = append(rows, row)
 	}
+
+	t := table.New(
+		table.WithColumns(columns),
+		table.WithRows(rows),
+		table.WithFocused(true),
+		table.WithHeight(5),
+	)
+
+	t.MoveDown(m.cursor)
+	return t
+}
+
+// The View method will simply look at the model and return a string.
+// The returned string is our UI.
+// Bubble Tea takes care of redrawing and other logic.
+func (m model) View() string {
+
+	s := ""
+
+	// Make table of filtered log lines
+	m.table = makeFilteredTable(m)
+	s += baseStyle.Render(m.table.View()) + "\n"
+
+	m.filterTable = makeFilters(m)
+	s += baseStyle.Render(m.filterTable.View()) + "\n"
 
 	// Send the UI for rendering
 	return s
