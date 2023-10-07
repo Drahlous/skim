@@ -14,15 +14,16 @@ import (
 
 // Model to store the application's state
 type model struct {
-	cursor       int  // which filter our cursor is pointing at
-	log_cursor   int  // which log line our cursor is pointing at
-	log_focus    bool // whether the log view is focussed
-	filters      []filterfiles.Filter
-	lines        []string
-	table        table.Model
-	filterTable  table.Model
-	windowWidth  int
-	windowHeight int
+	cursor        int  // which filter our cursor is pointing at
+	log_cursor    int  // which log line our cursor is pointing at
+	log_focus     bool // whether the log view is focussed
+	filters       []filterfiles.Filter
+	lines         []string
+	table         table.Model
+	filterTable   table.Model
+	windowWidth   int
+	windowHeight  int
+	hideUnmatched bool // whether lines are displayed that do not match an active filter
 }
 
 var baseStyle = lipgloss.NewStyle().
@@ -36,8 +37,9 @@ func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner) model {
 		lines = append(lines, scanner.Text())
 	}
 	return model{
-		filters: filters,
-		lines:   lines,
+		filters:       filters,
+		lines:         lines,
+		hideUnmatched: true,
 	}
 }
 
@@ -98,6 +100,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "tab":
 			m.log_focus = !m.log_focus
+
+		case "h":
+			// Toggle hiding unmatched lines
+			m.hideUnmatched = !m.hideUnmatched
 		}
 
 	case tea.WindowSizeMsg:
@@ -117,6 +123,9 @@ func makeFilteredTable(m model) table.Model {
 	rows := []table.Row{}
 
 	for i, line := range m.lines {
+		// +1 Offset to make the first line number 1
+		lineNumber := i + 1
+
 		// Do any filters match this line?
 		filter, match := filterfiles.GetMatchingFilter(m.filters, line)
 		if match == true {
@@ -129,8 +138,10 @@ func makeFilteredTable(m model) table.Model {
 				PaddingTop(0).
 				PaddingLeft(0)
 
-			// +1 Offset to make the first line number 1
-			row := table.Row{fmt.Sprintf("%d", i+1), style.Render(line)}
+			row := table.Row{fmt.Sprintf("%d", lineNumber), style.Render(line)}
+			rows = append(rows, row)
+		} else if !m.hideUnmatched {
+			row := table.Row{fmt.Sprintf("%d", lineNumber), line}
 			rows = append(rows, row)
 		}
 	}
