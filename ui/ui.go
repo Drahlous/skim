@@ -170,9 +170,6 @@ func (m model) View() string {
 	m.table = makeFilteredTable(m)
 	s += baseStyle.Render(m.table.View()) + "\n"
 
-	// Filters
-	s += "\nFilters\n\n"
-
 	// Iterate over filters
 	for i, filter := range m.filters {
 
@@ -199,9 +196,6 @@ func (m model) View() string {
 		row := fmt.Sprintf("%s [%s] %s\n", cursor, checked, style.Render(filter.XML.Text))
 		s += row
 	}
-
-	// Footer
-	s += "\nPress q to quit.\n"
 
 	// Send the UI for rendering
 	return s
