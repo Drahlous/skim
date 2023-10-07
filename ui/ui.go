@@ -14,12 +14,14 @@ import (
 
 // Model to store the application's state
 type model struct {
-	cursor     int  // which filter our cursor is pointing at
-	log_cursor int  // which log line our cursor is pointing at
-	log_focus  bool // whether the log view is focussed
-	filters    []filterfiles.Filter
-	lines      []string
-	table      table.Model
+	cursor       int  // which filter our cursor is pointing at
+	log_cursor   int  // which log line our cursor is pointing at
+	log_focus    bool // whether the log view is focussed
+	filters      []filterfiles.Filter
+	lines        []string
+	table        table.Model
+	windowWidth  int
+	windowHeight int
 }
 
 var baseStyle = lipgloss.NewStyle().
@@ -62,7 +64,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cursor_max int
 		if m.log_focus {
 			cursor = &m.log_cursor
-            // TODO: set this based on the visible lines instead of all lines
+			// TODO: set this based on the visible lines instead of all lines
 			cursor_max = len(m.lines) - 1
 		} else {
 			cursor = &m.cursor
@@ -72,24 +74,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Which key was pressed?
 		switch msg.String() {
 
-		// These keys will exit the program
 		case "ctrl+c", "q":
+			// These keys will exit the program
 			return m, tea.Quit
 
-		// "up" and "k" move the cursor up
 		case "up", "k":
+			// "up" and "k" move the cursor up
 			if *cursor > 0 {
 				*cursor--
 			}
 
-		// Move the cursor down
 		case "down", "j":
+			// Move the cursor down
 			if *cursor < cursor_max {
 				*cursor++
 			}
 
-			// Enter and spacebar toggle the selected state for the item under the cursor
 		case "enter", " ":
+			// Enter and spacebar toggle the selected state for the item under the cursor
 			filter := &m.filters[m.cursor]
 			filter.IsEnabled = !filter.IsEnabled
 
@@ -97,6 +99,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.log_focus = !m.log_focus
 		}
 
+	case tea.WindowSizeMsg:
+		m.windowWidth = msg.Width
+		m.windowHeight = msg.Height
 	}
 	return m, nil
 }
@@ -105,7 +110,7 @@ func makeFilteredTable(m model) table.Model {
 
 	columns := []table.Column{
 		{Title: "#", Width: 4},
-		{Title: "Line", Width: 100},
+		{Title: "Line", Width: m.windowWidth - 10}, // TODO: Avoid hardcoding this offset
 	}
 
 	rows := []table.Row{}
@@ -133,10 +138,11 @@ func makeFilteredTable(m model) table.Model {
 		table.WithColumns(columns),
 		table.WithRows(rows),
 		table.WithFocused(true),
-		table.WithHeight(20),
+		// TODO: Replace hardcoded offset with the size of the filter section
+		table.WithHeight(m.windowHeight-15),
 	)
 
-    // Move the view to the location of the log cursor
+	// Move the view to the location of the log cursor
 	t.MoveDown(m.log_cursor)
 
 	style := table.DefaultStyles()
