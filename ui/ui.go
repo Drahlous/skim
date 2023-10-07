@@ -12,11 +12,20 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Which window the cursor is active in
+type Focus int
+
+const (
+	FilterFocus Focus = iota // Focus is in the Filters window
+	LogFocus                 // Focus is in the Log window
+	MaxFocus                 // Unused, represents the total number of focus entries
+)
+
 // Model to store the application's state
 type model struct {
-	cursor        int  // which filter our cursor is pointing at
-	log_cursor    int  // which log line our cursor is pointing at
-	log_focus     bool // whether the log view is focussed
+	filter_cursor int   // which filter our cursor is pointing at
+	log_cursor    int   // which log line our cursor is pointing at
+	focus         Focus // which view is currently in focus
 	filters       []filterfiles.Filter
 	lines         []string
 	table         table.Model
@@ -65,12 +74,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		var cursor *int
 		var cursor_max int
-		if m.log_focus {
+		if m.focus == LogFocus {
 			cursor = &m.log_cursor
 			// TODO: set this based on the visible lines instead of all lines
 			cursor_max = len(m.lines) - 1
-		} else {
-			cursor = &m.cursor
+		} else if m.focus == FilterFocus {
+			cursor = &m.filter_cursor
 			cursor_max = len(m.filters) - 1
 		}
 
@@ -95,11 +104,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter", " ":
 			// Enter and spacebar toggle the selected state for the item under the cursor
-			filter := &m.filters[m.cursor]
+			filter := &m.filters[m.filter_cursor]
 			filter.IsEnabled = !filter.IsEnabled
 
 		case "tab":
-			m.log_focus = !m.log_focus
+			m.focus += 1
+			m.focus %= MaxFocus
 
 		case "h":
 			// Toggle hiding unmatched lines
@@ -207,7 +217,7 @@ func makeFilters(m model) table.Model {
 		table.WithHeight(5),
 	)
 
-	t.MoveDown(m.cursor)
+	t.MoveDown(m.filter_cursor)
 	return t
 }
 
