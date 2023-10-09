@@ -23,12 +23,12 @@ const (
 
 // Model to store the application's state
 type model struct {
-	filter_cursor int   // which filter our cursor is pointing at
-	log_cursor    int   // which log line our cursor is pointing at
+	filterCursor  int   // which filter our cursor is pointing at
+	logCursor     int   // which log line our cursor is pointing at
 	focus         Focus // which view is currently in focus
 	filters       []filterfiles.Filter
 	lines         []string
-	table         table.Model
+	logTable      table.Model
 	filterTable   table.Model
 	windowWidth   int
 	windowHeight  int
@@ -38,6 +38,12 @@ type model struct {
 var baseStyle = lipgloss.NewStyle().
 	BorderStyle(lipgloss.NormalBorder()).
 	BorderForeground(lipgloss.Color("240"))
+
+var filterStyle = lipgloss.NewStyle().
+	Bold(false).
+	Foreground(lipgloss.Color("#000000")).
+	PaddingTop(0).
+	PaddingLeft(0)
 
 // Define the initial state for the application
 func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner) model {
@@ -75,11 +81,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cursor *int
 		var cursor_max int
 		if m.focus == LogFocus {
-			cursor = &m.log_cursor
+			cursor = &m.logCursor
 			// TODO: set this based on the visible lines instead of all lines
 			cursor_max = len(m.lines) - 1
 		} else if m.focus == FilterFocus {
-			cursor = &m.filter_cursor
+			cursor = &m.filterCursor
 			cursor_max = len(m.filters) - 1
 		}
 
@@ -104,7 +110,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter", " ":
 			// Enter and spacebar toggle the selected state for the item under the cursor
-			filter := &m.filters[m.filter_cursor]
+			filter := &m.filters[m.filterCursor]
 			filter.IsEnabled = !filter.IsEnabled
 
 		case "tab":
@@ -141,12 +147,8 @@ func makeFilteredTable(m model) table.Model {
 		if match == true {
 
 			// Style this log line with the color from the filter
-			var style = lipgloss.NewStyle().
-				Bold(false).
-				Foreground(lipgloss.Color("#000000")).
-				Background(lipgloss.Color(filter.BackColor)).
-				PaddingTop(0).
-				PaddingLeft(0)
+			style := filterStyle
+			style.Background(lipgloss.Color(filter.BackColor))
 
 			row := table.Row{fmt.Sprintf("%d", lineNumber), style.Render(line)}
 			rows = append(rows, row)
@@ -165,18 +167,7 @@ func makeFilteredTable(m model) table.Model {
 	)
 
 	// Move the view to the location of the log cursor
-	t.MoveDown(m.log_cursor)
-
-	style := table.DefaultStyles()
-	style.Header = style.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		BorderBottom(true).
-		Bold(false)
-	style.Selected = style.Selected.
-		Foreground(lipgloss.Color("229")).
-		Background(lipgloss.Color("57")).
-		Bold(false)
+	t.MoveDown(m.logCursor)
 
 	return t
 }
@@ -198,12 +189,8 @@ func makeFilters(m model) table.Model {
 			checked = "x" // this item is selected
 		}
 
-		var style = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#000000")).
-			Background(lipgloss.Color(m.filters[i].BackColor)).
-			PaddingTop(0).
-			PaddingLeft(0)
+		style := filterStyle
+		style.Background(lipgloss.Color(filter.BackColor))
 
 		// Render the row
 		row := table.Row{fmt.Sprintf("[%s]", checked), style.Render(filter.XML.Text)}
@@ -217,7 +204,7 @@ func makeFilters(m model) table.Model {
 		table.WithHeight(5),
 	)
 
-	t.MoveDown(m.filter_cursor)
+	t.MoveDown(m.filterCursor)
 	return t
 }
 
@@ -229,8 +216,8 @@ func (m model) View() string {
 	s := ""
 
 	// Make table of filtered log lines
-	m.table = makeFilteredTable(m)
-	s += baseStyle.Render(m.table.View()) + "\n"
+	m.logTable = makeFilteredTable(m)
+	s += baseStyle.Render(m.logTable.View()) + "\n"
 
 	m.filterTable = makeFilters(m)
 	s += baseStyle.Render(m.filterTable.View()) + "\n"
