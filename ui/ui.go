@@ -5,6 +5,7 @@ import (
 	"example/user/skim/filterfiles"
 	"fmt"
 	"os"
+	"strings"
 
 	// We'll shorten the package name to "tea" for ease of use
 	"github.com/charmbracelet/bubbles/table"
@@ -141,6 +142,9 @@ func makeFilteredTable(m model) table.Model {
 	for i, line := range m.lines {
 		// +1 Offset to make the first line number 1
 		lineNumber := i + 1
+
+		// Replace tabs with spaces
+		line = strings.ReplaceAll(line, "\t", "    ")
 
 		// Do any filters match this line?
 		filter, match := filterfiles.GetMatchingFilter(m.filters, line)
