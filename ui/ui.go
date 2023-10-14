@@ -3,12 +3,12 @@ package ui
 import (
 	"bufio"
 	"example/user/skim/filterfiles"
+	filterview "example/user/skim/ui/views/filterview"
+	logview "example/user/skim/ui/views/logview"
 	"fmt"
 	"os"
-	"strings"
 
 	// We'll shorten the package name to "tea" for ease of use
-	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -22,15 +22,18 @@ const (
 	MaxFocus                 // Unused, represents the total number of focus entries
 )
 
+type TableView interface {
+	Toggle()
+	CursorUp() int
+	CursorDown() int
+	GetMaxCursor() int
+}
+
 // Model to store the application's state
 type model struct {
-	filterCursor  int   // which filter our cursor is pointing at
-	logCursor     int   // which log line our cursor is pointing at
+	log           logview.LogView
+	filters       filterview.FilterView
 	focus         Focus // which view is currently in focus
-	filters       []filterfiles.Filter
-	lines         []string
-	logTable      table.Model
-	filterTable   table.Model
 	windowWidth   int
 	windowHeight  int
 	hideUnmatched bool // whether lines are displayed that do not match an active filter
@@ -40,12 +43,6 @@ var baseStyle = lipgloss.NewStyle().
 	BorderStyle(lipgloss.NormalBorder()).
 	BorderForeground(lipgloss.Color("240"))
 
-var filterStyle = lipgloss.NewStyle().
-	Bold(false).
-	Foreground(lipgloss.Color("#000000")).
-	PaddingTop(0).
-	PaddingLeft(0)
-
 // Define the initial state for the application
 func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner) model {
 	var lines []string
@@ -53,8 +50,14 @@ func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner) model {
 		lines = append(lines, scanner.Text())
 	}
 	return model{
-		filters:       filters,
-		lines:         lines,
+		filters: filterview.FilterView{
+			Filters: filters,
+			Cursor:  0,
+		},
+		log: logview.LogView{
+			Lines:  lines,
+			Cursor: 0,
+		},
 		hideUnmatched: true,
 	}
 }
@@ -79,15 +82,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	// Is it a key press?
 	case tea.KeyMsg:
-		var cursor *int
-		var cursor_max int
+
+		var view TableView
+
 		if m.focus == LogFocus {
-			cursor = &m.logCursor
-			// TODO: set this based on the visible lines instead of all lines
-			cursor_max = len(m.lines) - 1
+			view = &m.log
 		} else if m.focus == FilterFocus {
-			cursor = &m.filterCursor
-			cursor_max = len(m.filters) - 1
+			view = &m.filters
 		}
 
 		// Which key was pressed?
@@ -99,20 +100,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "up", "k":
 			// "up" and "k" move the cursor up
-			if *cursor > 0 {
-				*cursor--
-			}
+			view.CursorUp()
 
 		case "down", "j":
 			// Move the cursor down
-			if *cursor < cursor_max {
-				*cursor++
-			}
+			view.CursorDown()
 
 		case "enter", " ":
 			// Enter and spacebar toggle the selected state for the item under the cursor
-			filter := &m.filters[m.filterCursor]
-			filter.IsEnabled = !filter.IsEnabled
+			view.Toggle()
 
 		case "tab":
 			m.focus += 1
@@ -130,88 +126,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func makeFilteredTable(m model) table.Model {
-
-	columns := []table.Column{
-		{Title: "#", Width: 4},
-		{Title: "Line", Width: m.windowWidth - 10}, // TODO: Avoid hardcoding this offset
-	}
-
-	rows := []table.Row{}
-
-	for i, line := range m.lines {
-		// +1 Offset to make the first line number 1
-		lineNumber := i + 1
-
-		// Replace tabs with spaces
-		line = strings.ReplaceAll(line, "\t", "    ")
-
-		// Do any filters match this line?
-		filter, match := filterfiles.GetMatchingFilter(m.filters, line)
-		if match == true {
-
-			// Style this log line with the color from the filter
-			style := filterStyle
-			style.Background(lipgloss.Color(filter.BackColor))
-
-			row := table.Row{fmt.Sprintf("%d", lineNumber), style.Render(line)}
-			rows = append(rows, row)
-		} else if !m.hideUnmatched {
-			row := table.Row{fmt.Sprintf("%d", lineNumber), line}
-			rows = append(rows, row)
-		}
-	}
-
-	t := table.New(
-		table.WithColumns(columns),
-		table.WithRows(rows),
-		table.WithFocused(true),
-		// TODO: Replace hardcoded offset with the size of the filter section
-		table.WithHeight(m.windowHeight-12),
-	)
-
-	// Move the view to the location of the log cursor
-	t.MoveDown(m.logCursor)
-
-	return t
-}
-
-func makeFilters(m model) table.Model {
-	columns := []table.Column{
-		{Title: "", Width: 3},
-		{Title: "Regex", Width: m.windowWidth - 9}, // TODO: Avoid hardcoding this offset
-	}
-
-	rows := []table.Row{}
-
-	// Iterate over filters
-	for i, filter := range m.filters {
-
-		// Is this filter enabled?
-		checked := " " // not selected
-		if m.filters[i].IsEnabled {
-			checked = "x" // this item is selected
-		}
-
-		style := filterStyle
-		style.Background(lipgloss.Color(filter.BackColor))
-
-		// Render the row
-		row := table.Row{fmt.Sprintf("[%s]", checked), style.Render(filter.XML.Text)}
-		rows = append(rows, row)
-	}
-
-	t := table.New(
-		table.WithColumns(columns),
-		table.WithRows(rows),
-		table.WithFocused(true),
-		table.WithHeight(5),
-	)
-
-	t.MoveDown(m.filterCursor)
-	return t
-}
-
 // The View method will simply look at the model and return a string.
 // The returned string is our UI.
 // Bubble Tea takes care of redrawing and other logic.
@@ -220,11 +134,11 @@ func (m model) View() string {
 	s := ""
 
 	// Make table of filtered log lines
-	m.logTable = makeFilteredTable(m)
-	s += baseStyle.Render(m.logTable.View()) + "\n"
+	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched)
+	s += baseStyle.Render(m.log.Table.View()) + "\n"
 
-	m.filterTable = makeFilters(m)
-	s += baseStyle.Render(m.filterTable.View()) + "\n"
+	m.filters.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters)
+	s += baseStyle.Render(m.filters.Table.View()) + "\n"
 
 	// Send the UI for rendering
 	return s
