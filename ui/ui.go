@@ -22,14 +22,38 @@ const (
 	MaxFocus                 // Unused, represents the total number of focus entries
 )
 
+type tableView interface {
+	CursorUp() int
+	CursorDown() int
+}
+
+type LogView struct {
+	lines  []string
+	cursor int // which log line our cursor is pointing at
+	table  table.Model
+}
+
+func (v *LogView) CursorUp() int {
+	if v.cursor > 0 {
+		v.cursor--
+	}
+	return v.cursor
+}
+
+func (v *LogView) CursorDown() int {
+	cursor_max := len(v.lines) - 1
+	if v.cursor < cursor_max {
+		v.cursor++
+	}
+	return v.cursor
+}
+
 // Model to store the application's state
 type model struct {
+	log           LogView
 	filterCursor  int   // which filter our cursor is pointing at
-	logCursor     int   // which log line our cursor is pointing at
 	focus         Focus // which view is currently in focus
 	filters       []filterfiles.Filter
-	lines         []string
-	logTable      table.Model
 	filterTable   table.Model
 	windowWidth   int
 	windowHeight  int
@@ -53,8 +77,11 @@ func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner) model {
 		lines = append(lines, scanner.Text())
 	}
 	return model{
-		filters:       filters,
-		lines:         lines,
+		filters: filters,
+		log: LogView{
+			lines:  lines,
+			cursor: 0,
+		},
 		hideUnmatched: true,
 	}
 }
@@ -81,14 +108,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		var cursor *int
 		var cursor_max int
-		if m.focus == LogFocus {
-			cursor = &m.logCursor
-			// TODO: set this based on the visible lines instead of all lines
-			cursor_max = len(m.lines) - 1
-		} else if m.focus == FilterFocus {
-			cursor = &m.filterCursor
-			cursor_max = len(m.filters) - 1
-		}
+		cursor = &m.filterCursor
+		cursor_max = len(m.filters) - 1
 
 		// Which key was pressed?
 		switch msg.String() {
@@ -99,13 +120,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "up", "k":
 			// "up" and "k" move the cursor up
-			if *cursor > 0 {
+			if m.focus == LogFocus {
+				m.log.CursorUp()
+			} else if *cursor > 0 {
 				*cursor--
 			}
 
 		case "down", "j":
 			// Move the cursor down
-			if *cursor < cursor_max {
+			if m.focus == LogFocus {
+				m.log.CursorDown()
+			} else if *cursor < cursor_max {
 				*cursor++
 			}
 
@@ -139,7 +164,7 @@ func makeFilteredTable(m model) table.Model {
 
 	rows := []table.Row{}
 
-	for i, line := range m.lines {
+	for i, line := range m.log.lines {
 		// +1 Offset to make the first line number 1
 		lineNumber := i + 1
 
@@ -171,7 +196,7 @@ func makeFilteredTable(m model) table.Model {
 	)
 
 	// Move the view to the location of the log cursor
-	t.MoveDown(m.logCursor)
+	t.MoveDown(m.log.cursor)
 
 	return t
 }
@@ -220,8 +245,8 @@ func (m model) View() string {
 	s := ""
 
 	// Make table of filtered log lines
-	m.logTable = makeFilteredTable(m)
-	s += baseStyle.Render(m.logTable.View()) + "\n"
+	m.log.table = makeFilteredTable(m)
+	s += baseStyle.Render(m.log.table.View()) + "\n"
 
 	m.filterTable = makeFilters(m)
 	s += baseStyle.Render(m.filterTable.View()) + "\n"
