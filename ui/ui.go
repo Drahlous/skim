@@ -22,15 +22,21 @@ const (
 	MaxFocus                 // Unused, represents the total number of focus entries
 )
 
-type tableView interface {
+type TableView interface {
+	Toggle()
 	CursorUp() int
 	CursorDown() int
+	getMaxCursor() int
 }
 
 type LogView struct {
 	lines  []string
 	cursor int // which log line our cursor is pointing at
 	table  table.Model
+}
+
+func (v *LogView) Toggle() {
+	return
 }
 
 func (v *LogView) CursorUp() int {
@@ -41,20 +47,50 @@ func (v *LogView) CursorUp() int {
 }
 
 func (v *LogView) CursorDown() int {
-	cursor_max := len(v.lines) - 1
-	if v.cursor < cursor_max {
+	if v.cursor < v.getMaxCursor() {
 		v.cursor++
 	}
 	return v.cursor
 }
 
+func (v *LogView) getMaxCursor() int {
+	return len(v.lines) - 1
+}
+
+type FilterView struct {
+	cursor  int // which filter our cursor is pointing at
+	table   table.Model
+	filters []filterfiles.Filter
+}
+
+func (v *FilterView) Toggle() {
+	filter := &v.filters[v.cursor]
+	filter.IsEnabled = !filter.IsEnabled
+}
+
+func (v *FilterView) CursorUp() int {
+	if v.cursor > 0 {
+		v.cursor--
+	}
+	return v.cursor
+}
+
+func (v *FilterView) CursorDown() int {
+	if v.cursor < v.getMaxCursor() {
+		v.cursor++
+	}
+	return v.cursor
+}
+
+func (v *FilterView) getMaxCursor() int {
+	return len(v.filters) - 1
+}
+
 // Model to store the application's state
 type model struct {
 	log           LogView
-	filterCursor  int   // which filter our cursor is pointing at
+	filters       FilterView
 	focus         Focus // which view is currently in focus
-	filters       []filterfiles.Filter
-	filterTable   table.Model
 	windowWidth   int
 	windowHeight  int
 	hideUnmatched bool // whether lines are displayed that do not match an active filter
@@ -77,7 +113,10 @@ func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner) model {
 		lines = append(lines, scanner.Text())
 	}
 	return model{
-		filters: filters,
+		filters: FilterView{
+			filters: filters,
+			cursor:  0,
+		},
 		log: LogView{
 			lines:  lines,
 			cursor: 0,
@@ -106,10 +145,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	// Is it a key press?
 	case tea.KeyMsg:
-		var cursor *int
-		var cursor_max int
-		cursor = &m.filterCursor
-		cursor_max = len(m.filters) - 1
+
+		var view TableView
+
+		if m.focus == LogFocus {
+			view = &m.log
+		} else if m.focus == FilterFocus {
+			view = &m.filters
+		}
 
 		// Which key was pressed?
 		switch msg.String() {
@@ -120,24 +163,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "up", "k":
 			// "up" and "k" move the cursor up
-			if m.focus == LogFocus {
-				m.log.CursorUp()
-			} else if *cursor > 0 {
-				*cursor--
-			}
+			view.CursorUp()
 
 		case "down", "j":
 			// Move the cursor down
-			if m.focus == LogFocus {
-				m.log.CursorDown()
-			} else if *cursor < cursor_max {
-				*cursor++
-			}
+			view.CursorDown()
 
 		case "enter", " ":
 			// Enter and spacebar toggle the selected state for the item under the cursor
-			filter := &m.filters[m.filterCursor]
-			filter.IsEnabled = !filter.IsEnabled
+			view.Toggle()
 
 		case "tab":
 			m.focus += 1
@@ -172,7 +206,7 @@ func makeFilteredTable(m model) table.Model {
 		line = strings.ReplaceAll(line, "\t", "    ")
 
 		// Do any filters match this line?
-		filter, match := filterfiles.GetMatchingFilter(m.filters, line)
+		filter, match := filterfiles.GetMatchingFilter(m.filters.filters, line)
 		if match == true {
 
 			// Style this log line with the color from the filter
@@ -210,11 +244,11 @@ func makeFilters(m model) table.Model {
 	rows := []table.Row{}
 
 	// Iterate over filters
-	for i, filter := range m.filters {
+	for i, filter := range m.filters.filters {
 
 		// Is this filter enabled?
 		checked := " " // not selected
-		if m.filters[i].IsEnabled {
+		if m.filters.filters[i].IsEnabled {
 			checked = "x" // this item is selected
 		}
 
@@ -233,7 +267,7 @@ func makeFilters(m model) table.Model {
 		table.WithHeight(5),
 	)
 
-	t.MoveDown(m.filterCursor)
+	t.MoveDown(m.filters.cursor)
 	return t
 }
 
@@ -248,8 +282,8 @@ func (m model) View() string {
 	m.log.table = makeFilteredTable(m)
 	s += baseStyle.Render(m.log.table.View()) + "\n"
 
-	m.filterTable = makeFilters(m)
-	s += baseStyle.Render(m.filterTable.View()) + "\n"
+	m.filters.table = makeFilters(m)
+	s += baseStyle.Render(m.filters.table.View()) + "\n"
 
 	// Send the UI for rendering
 	return s
