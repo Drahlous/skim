@@ -26,7 +26,6 @@ type TableView interface {
 	Toggle()
 	CursorUp() int
 	CursorDown() int
-	GetMaxCursor() int
 }
 
 // Model to store the application's state
