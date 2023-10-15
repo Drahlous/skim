@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
-	//"strings"
 )
 
 type FilterView struct {
