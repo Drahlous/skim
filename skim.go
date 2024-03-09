@@ -2,11 +2,11 @@ package main
 
 import (
 	"bufio"
-	"example/user/skim/filterfiles"
-	"example/user/skim/ui"
 	"flag"
 	"fmt"
 	"os"
+	"skim/filterfiles"
+	"skim/ui"
 )
 
 func run(filter_file string, log_file string) {

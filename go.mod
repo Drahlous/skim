@@ -1,4 +1,4 @@
-module example/user/skim
+module skim
 
 go 1.18
 

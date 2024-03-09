@@ -1,7 +1,7 @@
 package logview
 
 import (
-	"example/user/skim/filterfiles"
+	"skim/filterfiles"
 	"fmt"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"

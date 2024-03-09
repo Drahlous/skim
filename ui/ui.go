@@ -2,9 +2,9 @@ package ui
 
 import (
 	"bufio"
-	"example/user/skim/filterfiles"
-	filterview "example/user/skim/ui/views/filterview"
-	logview "example/user/skim/ui/views/logview"
+	"skim/filterfiles"
+	filterview "skim/ui/views/filterview"
+	logview "skim/ui/views/logview"
 	"fmt"
 	"os"
 
