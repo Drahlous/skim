@@ -42,10 +42,27 @@ type FilterXML struct {
 }
 
 type Filter struct {
-	XML       FilterXML
-	Regex     regexp.Regexp
-	IsEnabled bool
-	BackColor string
+	XML           FilterXML
+	Regex         regexp.Regexp
+	IsEnabled     bool
+	CaseSensitive bool
+	BackColor     string
+}
+
+// CompileRegex compiles text into a regexp, applying a case-insensitive
+// flag unless caseSensitive is set.
+func CompileRegex(text string, caseSensitive bool) (regexp.Regexp, error) {
+	pattern := text
+	if !caseSensitive {
+		pattern = "(?i)" + pattern
+	}
+
+	regex, err := regexp.Compile(pattern)
+	if err != nil {
+		return regexp.Regexp{}, err
+	}
+
+	return *regex, nil
 }
 
 func ReadFilterFile(filter_file_path string) (TextAnalysisToolSettings, error) {
@@ -75,20 +92,23 @@ func makeFilter(XML FilterXML) (Filter, error) {
 
 	var f Filter
 
-	regex, err := regexp.Compile(XML.Text)
-	if err != nil {
-		fmt.Println(err)
-		return f, err
-	}
 	f.XML = XML
 
 	// Translate individual fields for ease of use
-	f.Regex = *regex
 	if f.XML.Enabled == "y" {
 		f.IsEnabled = true
 	} else {
 		f.IsEnabled = false
 	}
+	f.CaseSensitive = f.XML.CaseSensitive == "y"
+
+	regex, err := CompileRegex(XML.Text, f.CaseSensitive)
+	if err != nil {
+		fmt.Println(err)
+		return f, err
+	}
+	f.Regex = regex
+
 	f.BackColor = fmt.Sprintf("#%s", strings.ToUpper(f.XML.BackColor))
 
 	return f, nil
