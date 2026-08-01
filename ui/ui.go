@@ -65,13 +65,29 @@ func resolveAction(km keybindings.KeyMap, scopes []keybindings.Scope, key string
 	return "", false
 }
 
-func renderKeyBindings(km keybindings.KeyMap) string {
+// renderKeyBindings builds the bottom help bar, showing only the bindings
+// that are actually relevant to the currently focused pane (plus the
+// always-available global bindings), so it doesn't advertise keys that do
+// nothing in the current context.
+func renderKeyBindings(km keybindings.KeyMap, focus Focus) string {
 	parts := []string{
 		fmt.Sprintf("%s: quit", strings.Join(km[keybindings.Quit], "/")),
-		fmt.Sprintf("%s: edit regex", strings.Join(km[keybindings.EditRegex], "/")),
-		fmt.Sprintf("%s/%s: move column", strings.Join(km[keybindings.CursorLeft], ","), strings.Join(km[keybindings.CursorRight], ",")),
-		fmt.Sprintf("%s: keybindings", strings.Join(km[keybindings.OpenKeybindingsScreen], "/")),
 	}
+
+	switch focus {
+	case FilterFocus:
+		parts = append(parts,
+			fmt.Sprintf("%s: edit regex", strings.Join(km[keybindings.EditRegex], "/")),
+			fmt.Sprintf("%s/%s: move column", strings.Join(km[keybindings.CursorLeft], ","), strings.Join(km[keybindings.CursorRight], ",")),
+		)
+	case LogFocus:
+		parts = append(parts,
+			fmt.Sprintf("%s: hide unmatched", strings.Join(km[keybindings.ToggleHideUnmatched], "/")),
+		)
+	}
+
+	parts = append(parts, fmt.Sprintf("%s: keybindings", strings.Join(km[keybindings.OpenKeybindingsScreen], "/")))
+
 	return strings.Join(parts, "  |  ")
 }
 
@@ -335,7 +351,7 @@ func (m model) View() string {
 
 	s += baseStyle.Render(m.filters.Render(m.windowWidth, m.windowHeight)) + "\n"
 
-	s += renderKeyBindings(m.keyMap) + "\n"
+	s += renderKeyBindings(m.keyMap, m.focus) + "\n"
 
 	// Send the UI for rendering
 	return s
