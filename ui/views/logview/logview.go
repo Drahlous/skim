@@ -1,10 +1,10 @@
 package logview
 
 import (
-	"skim/filterfiles"
 	"fmt"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
+	"skim/filterfiles"
 	"strings"
 )
 
