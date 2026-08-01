@@ -13,9 +13,10 @@ go build -v ./...              # build (mirrors .github/workflows/go.yml CI)
 go run . -filter <path> -log <path>   # run with a specific filter/log file
 go run .                       # run with defaults (./examples/simple_filter_two.tat, ./examples/simple_longer.log)
 go vet ./...                   # static analysis
+go test ./...                  # run unit tests (mirrors .github/workflows/go.yml CI)
 ```
 
-There are currently no automated tests in the repo (no `*_test.go` files). CI (`.github/workflows/go.yml`) only runs `go build -v ./...` on push/PR to `main`; a separate `.github/workflows/release.yml` builds and attaches the `skim` binary to GitHub releases on tag pushes.
+CI (`.github/workflows/go.yml`) runs `go build -v ./...` then `go test -v -race ./...` on push/PR to `main`; a separate `.github/workflows/release.yml` builds and attaches the `skim` binary to GitHub releases on tag pushes.
 
 ## Architecture
 
