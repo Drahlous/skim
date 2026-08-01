@@ -1,0 +1,44 @@
+2026-08-01T09:14:50Z INFO  [req-1180] request received: POST /api/checkout
+2026-08-01T09:14:50Z DEBUG [heartbeat] health check ok, uptime=41210s
+2026-08-01T09:14:50Z INFO  [req-1180] cart total calculated: $84.20
+2026-08-01T09:14:51Z INFO  [req-1180] request completed: 200 OK (112ms)
+2026-08-01T09:14:53Z DEBUG [heartbeat] health check ok, uptime=41213s
+2026-08-01T09:14:55Z INFO  [req-1181] request received: POST /api/checkout
+2026-08-01T09:14:55Z INFO  [req-1181] cart total calculated: $19.99
+2026-08-01T09:14:56Z INFO  [req-1181] request completed: 200 OK (98ms)
+2026-08-01T09:14:56Z DEBUG [heartbeat] health check ok, uptime=41216s
+2026-08-01T09:14:59Z DEBUG [heartbeat] health check ok, uptime=41219s
+2026-08-01T09:15:02Z INFO  [req-1182] request received: POST /api/checkout
+2026-08-01T09:15:02Z INFO  [req-1182] cart total calculated: $153.40
+2026-08-01T09:15:02Z DEBUG [heartbeat] health check ok, uptime=41222s
+2026-08-01T09:15:04Z WARN  [req-1182] payment-gateway response slow (2100ms), retrying
+2026-08-01T09:15:05Z DEBUG [heartbeat] health check ok, uptime=41225s
+2026-08-01T09:15:06Z WARN  [req-1182] payment-gateway response slow (2400ms), retrying
+2026-08-01T09:15:08Z DEBUG [heartbeat] health check ok, uptime=41228s
+2026-08-01T09:15:09Z ERROR [req-1182] payment-gateway timeout after 3 attempts
+2026-08-01T09:15:09Z ERROR [req-1182]   at paymentgateway.Charge(gateway.go:142)
+2026-08-01T09:15:09Z ERROR [req-1182]   at checkout.ProcessPayment(checkout.go:88)
+2026-08-01T09:15:09Z INFO  [req-1182] request completed: 502 Bad Gateway (7310ms)
+2026-08-01T09:15:11Z DEBUG [heartbeat] health check ok, uptime=41231s
+2026-08-01T09:15:13Z INFO  [req-1183] request received: POST /api/checkout
+2026-08-01T09:15:13Z INFO  [req-1183] cart total calculated: $42.00
+2026-08-01T09:15:14Z DEBUG [heartbeat] health check ok, uptime=41234s
+2026-08-01T09:15:15Z INFO  [req-1183] request completed: 200 OK (1890ms)
+2026-08-01T09:15:17Z DEBUG [heartbeat] health check ok, uptime=41237s
+2026-08-01T09:15:20Z INFO  [req-1184] request received: POST /api/checkout
+2026-08-01T09:15:20Z INFO  [req-1184] cart total calculated: $61.15
+2026-08-01T09:15:20Z DEBUG [heartbeat] health check ok, uptime=41240s
+2026-08-01T09:15:22Z WARN  [req-1184] payment-gateway response slow (2200ms), retrying
+2026-08-01T09:15:23Z DEBUG [heartbeat] health check ok, uptime=41243s
+2026-08-01T09:15:25Z WARN  [req-1184] payment-gateway response slow (2350ms), retrying
+2026-08-01T09:15:26Z DEBUG [heartbeat] health check ok, uptime=41246s
+2026-08-01T09:15:27Z ERROR [req-1184] payment-gateway timeout after 3 attempts
+2026-08-01T09:15:27Z ERROR [req-1184]   at paymentgateway.Charge(gateway.go:142)
+2026-08-01T09:15:27Z ERROR [req-1184]   at checkout.ProcessPayment(checkout.go:88)
+2026-08-01T09:15:27Z INFO  [req-1184] request completed: 502 Bad Gateway (7290ms)
+2026-08-01T09:15:29Z DEBUG [heartbeat] health check ok, uptime=41249s
+2026-08-01T09:15:32Z INFO  [req-1185] request received: POST /api/checkout
+2026-08-01T09:15:32Z INFO  [req-1185] cart total calculated: $27.50
+2026-08-01T09:15:32Z DEBUG [heartbeat] health check ok, uptime=41252s
+2026-08-01T09:15:33Z INFO  [req-1185] request completed: 200 OK (105ms)
+2026-08-01T09:15:35Z DEBUG [heartbeat] health check ok, uptime=41255s

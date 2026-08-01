@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<TextAnalysisTool.NET version="2023-04-25" showOnlyFilteredLines="False">
+  <filters>
+    <filter enabled="n" excluding="n" description="" backColor="ff0000" type="matches_text" case_sensitive="n" regex="y" text="EDIT_ME" />
+    <filter enabled="n" excluding="n" description="" backColor="ffd700" type="matches_text" case_sensitive="n" regex="y" text="EDIT_ME" />
+    <filter enabled="n" excluding="n" description="" backColor="87cefa" type="matches_text" case_sensitive="n" regex="y" text="EDIT_ME" />
+  </filters>
+</TextAnalysisTool.NET>
