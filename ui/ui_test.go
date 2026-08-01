@@ -163,6 +163,66 @@ func TestRenderKeyBindings(t *testing.T) {
 	})
 }
 
+func TestRenderStatusLine(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "^debug")}
+	m := newTestModel(t, filters, "debug: one\nnot matched\ndebug: two\n")
+
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = newModel.(model)
+
+	t.Run("hide unmatched on", func(t *testing.T) {
+		if !m.hideUnmatched {
+			t.Fatal("precondition: hideUnmatched should start true")
+		}
+		m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched)
+		out := renderStatusLine(m)
+
+		if !strings.Contains(out, "hide unmatched: ON") {
+			t.Errorf("status line missing hide-unmatched ON, got: %q", out)
+		}
+		if !strings.Contains(out, "showing 2/3 lines") {
+			t.Errorf("status line = %q, want it to report 2/3 lines shown", out)
+		}
+	})
+
+	t.Run("hide unmatched off", func(t *testing.T) {
+		m.hideUnmatched = false
+		m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched)
+		out := renderStatusLine(m)
+
+		if !strings.Contains(out, "hide unmatched: OFF") {
+			t.Errorf("status line missing hide-unmatched OFF, got: %q", out)
+		}
+		if !strings.Contains(out, "showing 3/3 lines") {
+			t.Errorf("status line = %q, want it to report 3/3 lines shown", out)
+		}
+	})
+}
+
+func TestPaneStyleHighlightsFocusedPaneOnly(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+
+	if m.focus != FilterFocus {
+		t.Fatalf("precondition: focus = %v, want FilterFocus", m.focus)
+	}
+	if m.paneStyle(FilterFocus).GetBorderTopForeground() != focusedStyle.GetBorderTopForeground() {
+		t.Error("paneStyle(FilterFocus) should be focusedStyle while FilterFocus is active")
+	}
+	if m.paneStyle(LogFocus).GetBorderTopForeground() != baseStyle.GetBorderTopForeground() {
+		t.Error("paneStyle(LogFocus) should be baseStyle while FilterFocus is active")
+	}
+
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+
+	if m.paneStyle(LogFocus).GetBorderTopForeground() != focusedStyle.GetBorderTopForeground() {
+		t.Error("paneStyle(LogFocus) should be focusedStyle after switching to LogFocus")
+	}
+	if m.paneStyle(FilterFocus).GetBorderTopForeground() != baseStyle.GetBorderTopForeground() {
+		t.Error("paneStyle(FilterFocus) should be baseStyle after switching to LogFocus")
+	}
+}
+
 func TestInitialModel(t *testing.T) {
 	filters := []filterfiles.Filter{mustFilter(t, "^debug")}
 	m := newTestModel(t, filters, "line one\nline two\n")
@@ -354,6 +414,47 @@ func TestUpdateWindowSizeMsg(t *testing.T) {
 	}
 }
 
+func TestDisplayKey(t *testing.T) {
+	tests := []struct {
+		key  string
+		want string
+	}{
+		{" ", "space"},
+		{"enter", "enter"},
+		{"ctrl+c", "ctrl+c"},
+	}
+
+	for _, tt := range tests {
+		if got := displayKey(tt.key); got != tt.want {
+			t.Errorf("displayKey(%q) = %q, want %q", tt.key, got, tt.want)
+		}
+	}
+}
+
+func TestDisplayKeys(t *testing.T) {
+	got := displayKeys([]string{"enter", " "}, ", ")
+	want := "enter, space"
+	if got != want {
+		t.Errorf("displayKeys([enter,  ], \", \") = %q, want %q", got, want)
+	}
+}
+
+func TestKeybindingsScreenShowsSpaceKeyByName(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+
+	newModel, _ := m.Update(keyMsg("K"))
+	m = newModel.(model)
+
+	out := m.renderKeybindingsScreen()
+
+	if strings.Contains(out, "enter, \n") || strings.Contains(out, "enter,  ") {
+		t.Errorf("renderKeybindingsScreen still shows a bare trailing comma for the space key, got:\n%s", out)
+	}
+	if !strings.Contains(out, "enter, space") {
+		t.Errorf("renderKeybindingsScreen should show the space key as \"space\", got:\n%s", out)
+	}
+}
+
 func TestKeybindingsScreenOpenNavigateAndRebind(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
 
@@ -445,6 +546,9 @@ func TestViewDoesNotPanic(t *testing.T) {
 	out := m.View()
 	if !strings.Contains(out, "^debug") {
 		t.Errorf("View() output missing filter regex text, got:\n%s", out)
+	}
+	if !strings.Contains(out, "hide unmatched:") {
+		t.Errorf("View() output missing status line, got:\n%s", out)
 	}
 
 	newModel, _ = m.Update(keyMsg("K"))
