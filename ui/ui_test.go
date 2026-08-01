@@ -132,16 +132,35 @@ func TestResolveAction(t *testing.T) {
 
 func TestRenderKeyBindings(t *testing.T) {
 	km := keybindings.Defaults()
-	out := renderKeyBindings(km)
 
-	for _, want := range []string{"quit", "edit regex", "move column", "keybindings"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("renderKeyBindings output missing %q, got: %q", want, out)
+	t.Run("filter focus", func(t *testing.T) {
+		out := renderKeyBindings(km, FilterFocus)
+
+		for _, want := range []string{"quit", "edit regex", "move column", "keybindings"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("renderKeyBindings(FilterFocus) output missing %q, got: %q", want, out)
+			}
 		}
-	}
-	if !strings.Contains(out, "ctrl+c/q") {
-		t.Errorf("renderKeyBindings should show the quit keys, got: %q", out)
-	}
+		if !strings.Contains(out, "ctrl+c/q") {
+			t.Errorf("renderKeyBindings(FilterFocus) should show the quit keys, got: %q", out)
+		}
+		if strings.Contains(out, "hide unmatched") {
+			t.Errorf("renderKeyBindings(FilterFocus) should not advertise the log-only hide-unmatched binding, got: %q", out)
+		}
+	})
+
+	t.Run("log focus", func(t *testing.T) {
+		out := renderKeyBindings(km, LogFocus)
+
+		for _, want := range []string{"quit", "hide unmatched", "keybindings"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("renderKeyBindings(LogFocus) output missing %q, got: %q", want, out)
+			}
+		}
+		if strings.Contains(out, "edit regex") || strings.Contains(out, "move column") {
+			t.Errorf("renderKeyBindings(LogFocus) should not advertise filter-only bindings, got: %q", out)
+		}
+	})
 }
 
 func TestRenderStatusLine(t *testing.T) {
