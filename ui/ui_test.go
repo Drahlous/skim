@@ -144,6 +144,30 @@ func TestRenderKeyBindings(t *testing.T) {
 	}
 }
 
+func TestPaneStyleHighlightsFocusedPaneOnly(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+
+	if m.focus != FilterFocus {
+		t.Fatalf("precondition: focus = %v, want FilterFocus", m.focus)
+	}
+	if m.paneStyle(FilterFocus).GetBorderTopForeground() != focusedStyle.GetBorderTopForeground() {
+		t.Error("paneStyle(FilterFocus) should be focusedStyle while FilterFocus is active")
+	}
+	if m.paneStyle(LogFocus).GetBorderTopForeground() != baseStyle.GetBorderTopForeground() {
+		t.Error("paneStyle(LogFocus) should be baseStyle while FilterFocus is active")
+	}
+
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+
+	if m.paneStyle(LogFocus).GetBorderTopForeground() != focusedStyle.GetBorderTopForeground() {
+		t.Error("paneStyle(LogFocus) should be focusedStyle after switching to LogFocus")
+	}
+	if m.paneStyle(FilterFocus).GetBorderTopForeground() != baseStyle.GetBorderTopForeground() {
+		t.Error("paneStyle(FilterFocus) should be baseStyle after switching to LogFocus")
+	}
+}
+
 func TestInitialModel(t *testing.T) {
 	filters := []filterfiles.Filter{mustFilter(t, "^debug")}
 	m := newTestModel(t, filters, "line one\nline two\n")
