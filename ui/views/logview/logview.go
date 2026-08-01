@@ -32,6 +32,14 @@ func (v *LogView) CursorDown() int {
 	return v.Cursor
 }
 
+func (v *LogView) CursorLeft() int {
+	return 0
+}
+
+func (v *LogView) CursorRight() int {
+	return 0
+}
+
 func (v *LogView) GetMaxCursor() int {
 	return len(v.Lines) - 1
 }
