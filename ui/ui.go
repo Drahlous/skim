@@ -65,6 +65,26 @@ func resolveAction(km keybindings.KeyMap, scopes []keybindings.Scope, key string
 	return "", false
 }
 
+// displayKey renders a raw key string (as stored in a keybindings.KeyMap)
+// for on-screen display. Some keys, like " " (space), are invisible or
+// confusing when printed literally.
+func displayKey(key string) string {
+	if key == " " {
+		return "space"
+	}
+	return key
+}
+
+// displayKeys renders a slice of raw key strings for on-screen display,
+// joined with sep.
+func displayKeys(keys []string, sep string) string {
+	labels := make([]string, len(keys))
+	for i, k := range keys {
+		labels[i] = displayKey(k)
+	}
+	return strings.Join(labels, sep)
+}
+
 func renderKeyBindings(km keybindings.KeyMap) string {
 	parts := []string{
 		fmt.Sprintf("%s: quit", strings.Join(km[keybindings.Quit], "/")),
@@ -307,7 +327,7 @@ func (m model) renderKeybindingsScreen() string {
 			cursor = "> "
 		}
 
-		keys := strings.Join(m.keyMap[spec.Action], ", ")
+		keys := displayKeys(m.keyMap[spec.Action], ", ")
 		if m.kbCapturing && i == m.kbCursor {
 			keys = "press a key..."
 		}

@@ -335,6 +335,47 @@ func TestUpdateWindowSizeMsg(t *testing.T) {
 	}
 }
 
+func TestDisplayKey(t *testing.T) {
+	tests := []struct {
+		key  string
+		want string
+	}{
+		{" ", "space"},
+		{"enter", "enter"},
+		{"ctrl+c", "ctrl+c"},
+	}
+
+	for _, tt := range tests {
+		if got := displayKey(tt.key); got != tt.want {
+			t.Errorf("displayKey(%q) = %q, want %q", tt.key, got, tt.want)
+		}
+	}
+}
+
+func TestDisplayKeys(t *testing.T) {
+	got := displayKeys([]string{"enter", " "}, ", ")
+	want := "enter, space"
+	if got != want {
+		t.Errorf("displayKeys([enter,  ], \", \") = %q, want %q", got, want)
+	}
+}
+
+func TestKeybindingsScreenShowsSpaceKeyByName(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+
+	newModel, _ := m.Update(keyMsg("K"))
+	m = newModel.(model)
+
+	out := m.renderKeybindingsScreen()
+
+	if strings.Contains(out, "enter, \n") || strings.Contains(out, "enter,  ") {
+		t.Errorf("renderKeybindingsScreen still shows a bare trailing comma for the space key, got:\n%s", out)
+	}
+	if !strings.Contains(out, "enter, space") {
+		t.Errorf("renderKeybindingsScreen should show the space key as \"space\", got:\n%s", out)
+	}
+}
+
 func TestKeybindingsScreenOpenNavigateAndRebind(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
 
