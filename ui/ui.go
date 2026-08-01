@@ -65,6 +65,21 @@ func resolveAction(km keybindings.KeyMap, scopes []keybindings.Scope, key string
 	return "", false
 }
 
+// renderStatusLine shows whether unmatched lines are currently being
+// hidden and how many of the log's lines are visible, so filtering never
+// silently makes lines disappear without a visible cue.
+func renderStatusLine(m model) string {
+	hideState := "OFF"
+	if m.hideUnmatched {
+		hideState = "ON"
+	}
+
+	total := len(m.log.Lines)
+	shown := len(m.log.Table.Rows())
+
+	return fmt.Sprintf("hide unmatched: %s  |  showing %d/%d lines", hideState, shown, total)
+}
+
 func renderKeyBindings(km keybindings.KeyMap) string {
 	parts := []string{
 		fmt.Sprintf("%s: quit", strings.Join(km[keybindings.Quit], "/")),
@@ -335,6 +350,7 @@ func (m model) View() string {
 
 	s += baseStyle.Render(m.filters.Render(m.windowWidth, m.windowHeight)) + "\n"
 
+	s += renderStatusLine(m) + "\n"
 	s += renderKeyBindings(m.keyMap) + "\n"
 
 	// Send the UI for rendering

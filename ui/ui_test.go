@@ -144,6 +144,42 @@ func TestRenderKeyBindings(t *testing.T) {
 	}
 }
 
+func TestRenderStatusLine(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "^debug")}
+	m := newTestModel(t, filters, "debug: one\nnot matched\ndebug: two\n")
+
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = newModel.(model)
+
+	t.Run("hide unmatched on", func(t *testing.T) {
+		if !m.hideUnmatched {
+			t.Fatal("precondition: hideUnmatched should start true")
+		}
+		m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched)
+		out := renderStatusLine(m)
+
+		if !strings.Contains(out, "hide unmatched: ON") {
+			t.Errorf("status line missing hide-unmatched ON, got: %q", out)
+		}
+		if !strings.Contains(out, "showing 2/3 lines") {
+			t.Errorf("status line = %q, want it to report 2/3 lines shown", out)
+		}
+	})
+
+	t.Run("hide unmatched off", func(t *testing.T) {
+		m.hideUnmatched = false
+		m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched)
+		out := renderStatusLine(m)
+
+		if !strings.Contains(out, "hide unmatched: OFF") {
+			t.Errorf("status line missing hide-unmatched OFF, got: %q", out)
+		}
+		if !strings.Contains(out, "showing 3/3 lines") {
+			t.Errorf("status line = %q, want it to report 3/3 lines shown", out)
+		}
+	})
+}
+
 func TestInitialModel(t *testing.T) {
 	filters := []filterfiles.Filter{mustFilter(t, "^debug")}
 	m := newTestModel(t, filters, "line one\nline two\n")
@@ -426,6 +462,9 @@ func TestViewDoesNotPanic(t *testing.T) {
 	out := m.View()
 	if !strings.Contains(out, "^debug") {
 		t.Errorf("View() output missing filter regex text, got:\n%s", out)
+	}
+	if !strings.Contains(out, "hide unmatched:") {
+		t.Errorf("View() output missing status line, got:\n%s", out)
 	}
 
 	newModel, _ = m.Update(keyMsg("K"))
