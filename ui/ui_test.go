@@ -180,6 +180,30 @@ func TestRenderStatusLine(t *testing.T) {
 	})
 }
 
+func TestPaneStyleHighlightsFocusedPaneOnly(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+
+	if m.focus != FilterFocus {
+		t.Fatalf("precondition: focus = %v, want FilterFocus", m.focus)
+	}
+	if m.paneStyle(FilterFocus).GetBorderTopForeground() != focusedStyle.GetBorderTopForeground() {
+		t.Error("paneStyle(FilterFocus) should be focusedStyle while FilterFocus is active")
+	}
+	if m.paneStyle(LogFocus).GetBorderTopForeground() != baseStyle.GetBorderTopForeground() {
+		t.Error("paneStyle(LogFocus) should be baseStyle while FilterFocus is active")
+	}
+
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+
+	if m.paneStyle(LogFocus).GetBorderTopForeground() != focusedStyle.GetBorderTopForeground() {
+		t.Error("paneStyle(LogFocus) should be focusedStyle after switching to LogFocus")
+	}
+	if m.paneStyle(FilterFocus).GetBorderTopForeground() != baseStyle.GetBorderTopForeground() {
+		t.Error("paneStyle(FilterFocus) should be baseStyle after switching to LogFocus")
+	}
+}
+
 func TestInitialModel(t *testing.T) {
 	filters := []filterfiles.Filter{mustFilter(t, "^debug")}
 	m := newTestModel(t, filters, "line one\nline two\n")
@@ -368,6 +392,47 @@ func TestUpdateWindowSizeMsg(t *testing.T) {
 
 	if m.windowWidth != 120 || m.windowHeight != 40 {
 		t.Errorf("windowWidth/Height = %d/%d, want 120/40", m.windowWidth, m.windowHeight)
+	}
+}
+
+func TestDisplayKey(t *testing.T) {
+	tests := []struct {
+		key  string
+		want string
+	}{
+		{" ", "space"},
+		{"enter", "enter"},
+		{"ctrl+c", "ctrl+c"},
+	}
+
+	for _, tt := range tests {
+		if got := displayKey(tt.key); got != tt.want {
+			t.Errorf("displayKey(%q) = %q, want %q", tt.key, got, tt.want)
+		}
+	}
+}
+
+func TestDisplayKeys(t *testing.T) {
+	got := displayKeys([]string{"enter", " "}, ", ")
+	want := "enter, space"
+	if got != want {
+		t.Errorf("displayKeys([enter,  ], \", \") = %q, want %q", got, want)
+	}
+}
+
+func TestKeybindingsScreenShowsSpaceKeyByName(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+
+	newModel, _ := m.Update(keyMsg("K"))
+	m = newModel.(model)
+
+	out := m.renderKeybindingsScreen()
+
+	if strings.Contains(out, "enter, \n") || strings.Contains(out, "enter,  ") {
+		t.Errorf("renderKeybindingsScreen still shows a bare trailing comma for the space key, got:\n%s", out)
+	}
+	if !strings.Contains(out, "enter, space") {
+		t.Errorf("renderKeybindingsScreen should show the space key as \"space\", got:\n%s", out)
 	}
 }
 

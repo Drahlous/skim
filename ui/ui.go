@@ -80,6 +80,26 @@ func renderStatusLine(m model) string {
 	return fmt.Sprintf("hide unmatched: %s  |  showing %d/%d lines", hideState, shown, total)
 }
 
+// displayKey renders a raw key string (as stored in a keybindings.KeyMap)
+// for on-screen display. Some keys, like " " (space), are invisible or
+// confusing when printed literally.
+func displayKey(key string) string {
+	if key == " " {
+		return "space"
+	}
+	return key
+}
+
+// displayKeys renders a slice of raw key strings for on-screen display,
+// joined with sep.
+func displayKeys(keys []string, sep string) string {
+	labels := make([]string, len(keys))
+	for i, k := range keys {
+		labels[i] = displayKey(k)
+	}
+	return strings.Join(labels, sep)
+}
+
 func renderKeyBindings(km keybindings.KeyMap) string {
 	parts := []string{
 		fmt.Sprintf("%s: quit", strings.Join(km[keybindings.Quit], "/")),
@@ -147,6 +167,22 @@ type model struct {
 var baseStyle = lipgloss.NewStyle().
 	BorderStyle(lipgloss.NormalBorder()).
 	BorderForeground(lipgloss.Color("240"))
+
+// focusedStyle marks whichever pane (log or filters) currently has
+// keyboard focus, since the two panes otherwise look identical and it's
+// easy to lose track of which one your keypresses are going to.
+var focusedStyle = lipgloss.NewStyle().
+	BorderStyle(lipgloss.NormalBorder()).
+	BorderForeground(lipgloss.Color("212"))
+
+// paneStyle returns focusedStyle if want equals the model's current focus,
+// otherwise the default baseStyle.
+func (m model) paneStyle(want Focus) lipgloss.Style {
+	if m.focus == want {
+		return focusedStyle
+	}
+	return baseStyle
+}
 
 // Define the initial state for the application
 func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner) model {
@@ -322,7 +358,7 @@ func (m model) renderKeybindingsScreen() string {
 			cursor = "> "
 		}
 
-		keys := strings.Join(m.keyMap[spec.Action], ", ")
+		keys := displayKeys(m.keyMap[spec.Action], ", ")
 		if m.kbCapturing && i == m.kbCursor {
 			keys = "press a key..."
 		}
@@ -346,9 +382,9 @@ func (m model) View() string {
 
 	// Make table of filtered log lines
 	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched)
-	s += baseStyle.Render(m.log.Table.View()) + "\n"
+	s += m.paneStyle(LogFocus).Render(m.log.Table.View()) + "\n"
 
-	s += baseStyle.Render(m.filters.Render(m.windowWidth, m.windowHeight)) + "\n"
+	s += m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, m.windowHeight)) + "\n"
 
 	s += renderStatusLine(m) + "\n"
 	s += renderKeyBindings(m.keyMap) + "\n"
