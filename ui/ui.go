@@ -153,6 +153,22 @@ var baseStyle = lipgloss.NewStyle().
 	BorderStyle(lipgloss.NormalBorder()).
 	BorderForeground(lipgloss.Color("240"))
 
+// focusedStyle marks whichever pane (log or filters) currently has
+// keyboard focus, since the two panes otherwise look identical and it's
+// easy to lose track of which one your keypresses are going to.
+var focusedStyle = lipgloss.NewStyle().
+	BorderStyle(lipgloss.NormalBorder()).
+	BorderForeground(lipgloss.Color("212"))
+
+// paneStyle returns focusedStyle if want equals the model's current focus,
+// otherwise the default baseStyle.
+func (m model) paneStyle(want Focus) lipgloss.Style {
+	if m.focus == want {
+		return focusedStyle
+	}
+	return baseStyle
+}
+
 // Define the initial state for the application
 func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner) model {
 	var lines []string
@@ -351,9 +367,9 @@ func (m model) View() string {
 
 	// Make table of filtered log lines
 	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched)
-	s += baseStyle.Render(m.log.Table.View()) + "\n"
+	s += m.paneStyle(LogFocus).Render(m.log.Table.View()) + "\n"
 
-	s += baseStyle.Render(m.filters.Render(m.windowWidth, m.windowHeight)) + "\n"
+	s += m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, m.windowHeight)) + "\n"
 
 	s += renderKeyBindings(m.keyMap) + "\n"
 
