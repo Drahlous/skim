@@ -65,6 +65,13 @@ func (v *LogView) MakeTable(windowWidth int, windowHeight int, filters []filterf
 		// Replace tabs with spaces
 		line = strings.ReplaceAll(line, "\t", "    ")
 
+		// A line matching an enabled excluding filter is always hidden,
+		// regardless of hideUnmatched or whether it would otherwise match a
+		// highlighting filter.
+		if filterfiles.IsExcluded(filters, line) {
+			continue
+		}
+
 		// Do any filters match this line?
 		filter, match := filterfiles.GetMatchingFilter(filters, line)
 		if match == true {

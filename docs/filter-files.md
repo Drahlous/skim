@@ -14,7 +14,7 @@ skim's filters live in a `.tat` file — the same XML format used by [TextAnalys
 </TextAnalysisTool.NET>
 ```
 
-Every `<filter>` is a single row in the Filters pane, in file order. **Order matters**: for each log line, skim highlights it with the *first enabled filter whose regex matches*, top to bottom. If two filters could both match a line, whichever appears earlier in the file wins.
+Every `<filter>` is a single row in the Filters pane, in file order. **Order matters for highlighting**: for each log line, skim highlights it with the *first enabled, non-excluding filter whose regex matches*, top to bottom. If two highlighting filters could both match a line, whichever appears earlier in the file wins. Exclusion (below) is independent of this order — every enabled excluding filter is checked regardless of position.
 
 ## Attributes skim uses
 
@@ -22,14 +22,14 @@ Every `<filter>` is a single row in the Filters pane, in file order. **Order mat
 | --- | --- |
 | `enabled` | `"y"` or `"n"`. Disabled filters never match, and (with hide-unmatched on) their lines are hidden along with everything else unmatched. Toggle live with `enter`/`space` in the Filters pane. |
 | `case_sensitive` | `"y"` or `"n"`. When `"n"` (the default), the regex is compiled with an `(?i)` case-insensitive flag. Toggle live with the case-sensitivity checkbox in the Filters pane. |
-| `backColor` | A 6-digit hex color **without** a leading `#` (e.g. `87cefa`, not `#87cefa`), applied as the background of any log line — and the filter's own row — that matches. |
+| `excluding` | `"y"` or `"n"`. A matching line from an enabled `excluding="y"` filter is **always hidden** — regardless of `hide unmatched`, and regardless of whether the line would otherwise match a highlighting filter. Use it for noise you never want to see (health checks, heartbeats) rather than relying on hide-unmatched, which only hides lines that match *nothing*. In the Filters pane, an excluding filter's regex is prefixed with `! ` so it isn't mistaken for a highlighting filter that just never matches. |
+| `backColor` | A 6-digit hex color **without** a leading `#` (e.g. `87cefa`, not `#87cefa`), applied as the background of any log line — and the filter's own row — that matches. Still required on excluding filters even though it has no visible effect (excluded lines are never shown). |
 | `text` | The regex pattern to match against each log line. Go's [`regexp` syntax](https://pkg.go.dev/regexp/syntax) (RE2) applies — not .NET regex syntax, even though the file format comes from a .NET tool. Edit live with `i` in the Filters pane. |
 
 ## Attributes kept for TAT compatibility, not currently acted on
 
 These are parsed from the file and preserved if you round-trip it, but skim doesn't change behavior based on them today:
 
-- `excluding` — in TextAnalysisTool.NET this marks a filter as *hiding* matching lines rather than highlighting them. skim doesn't implement this yet; every filter highlights, none exclude. The closest equivalent in skim is: don't enable a filter for text you want to bury, and rely on hide-unmatched (see [getting started](./getting-started.md#hiding-the-noise)) to hide everything that isn't explicitly matched by something you *do* want.
 - `regex` — in TAT this toggles whether `text` is treated as a literal string or a regex. skim always compiles `text` as a regex.
 - `description`, `type` — carried through, not displayed or used anywhere in skim's UI.
 

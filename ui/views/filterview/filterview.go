@@ -175,9 +175,18 @@ func (v *FilterView) Render(windowWidth int, windowHeight int) string {
 			caseCell = selectedCellStyle.Render(caseCell)
 		}
 
+		// Excluding filters hide matching lines rather than highlighting
+		// them, which would otherwise look identical to a highlighting
+		// filter that simply never matches anything; mark them so that
+		// isn't a silent mystery.
+		text := filter.XML.Text
+		if filter.Excluding {
+			text = "! " + text
+		}
+
 		style := filterStyle
 		style.Background(lipgloss.Color(filter.BackColor))
-		regexCell := style.Render(cell(filter.XML.Text, regexWidth))
+		regexCell := style.Render(cell(text, regexWidth))
 
 		row := lipgloss.JoinHorizontal(lipgloss.Left,
 			cell(enabledCell, enabledWidth), " ",

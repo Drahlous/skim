@@ -46,6 +46,7 @@ type Filter struct {
 	Regex         regexp.Regexp
 	IsEnabled     bool
 	CaseSensitive bool
+	Excluding     bool
 	BackColor     string
 }
 
@@ -101,6 +102,7 @@ func makeFilter(XML FilterXML) (Filter, error) {
 		f.IsEnabled = false
 	}
 	f.CaseSensitive = f.XML.CaseSensitive == "y"
+	f.Excluding = f.XML.Excluding == "y"
 
 	regex, err := CompileRegex(XML.Text, f.CaseSensitive)
 	if err != nil {
@@ -129,12 +131,18 @@ func CompileFilterRegularExpressions(filterSettings TextAnalysisToolSettings) ([
 	return filters, nil
 }
 
+// GetMatchingFilter returns the first enabled, non-excluding filter whose
+// regex matches line, for highlighting purposes. Excluding filters are never
+// returned here: they mean "hide this line" rather than "color this line"
+// and are handled separately by IsExcluded, which callers should check
+// first (an excluded line should never be shown, regardless of whether it
+// would also match a highlighting filter).
 func GetMatchingFilter(filters []Filter, line string) (Filter, bool) {
 	var filter Filter
 	for _, filter := range filters {
 
-		// Only continue if this filter is enabled
-		if !filter.IsEnabled {
+		// Only continue if this filter is enabled and not an exclusion filter
+		if !filter.IsEnabled || filter.Excluding {
 			continue
 		}
 
@@ -145,6 +153,23 @@ func GetMatchingFilter(filters []Filter, line string) (Filter, bool) {
 		}
 	}
 	return filter, false
+}
+
+// IsExcluded reports whether line matches any enabled excluding filter. An
+// excluded line should be hidden unconditionally, regardless of hideUnmatched
+// or whether it would otherwise match a highlighting filter, and regardless
+// of filter order: unlike GetMatchingFilter's first-match-wins highlighting,
+// exclusion is checked against every enabled excluding filter.
+func IsExcluded(filters []Filter, line string) bool {
+	for _, filter := range filters {
+		if !filter.IsEnabled || !filter.Excluding {
+			continue
+		}
+		if filter.Regex.MatchString(line) {
+			return true
+		}
+	}
+	return false
 }
 
 func GetMatchingLines(filters []Filter, scanner *bufio.Scanner) {
