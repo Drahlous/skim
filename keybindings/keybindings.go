@@ -21,6 +21,9 @@ const (
 	ToggleHideUnmatched   Action = "toggle_hide_unmatched"
 	EditRegex             Action = "edit_regex"
 	OpenKeybindingsScreen Action = "open_keybindings"
+	Search                Action = "search"
+	SearchNext            Action = "search_next"
+	SearchPrev            Action = "search_prev"
 )
 
 // Scope limits which focused view an action's keys are considered in.
@@ -56,6 +59,9 @@ var Registry = []Spec{
 	{ToggleHideUnmatched, ScopeLogView, "hide unmatched lines", []string{"h"}},
 	{EditRegex, ScopeFilterView, "edit regex in $EDITOR", []string{"i"}},
 	{OpenKeybindingsScreen, ScopeGlobal, "edit keybindings", []string{"K"}},
+	{Search, ScopeLogView, "search log", []string{"/"}},
+	{SearchNext, ScopeLogView, "jump to next match", []string{"n"}},
+	{SearchPrev, ScopeLogView, "jump to previous match", []string{"N"}},
 }
 
 // SpecFor returns the registry entry for an action.

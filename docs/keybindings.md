@@ -16,6 +16,9 @@ Every action in skim is rebindable. This page lists the defaults and explains ho
 | Hide unmatched lines | `h` | Log pane only | Toggle whether log lines with no matching enabled filter are shown |
 | Edit regex in `$EDITOR` | `i` | Filters pane only | Open the selected filter's regex text in `$EDITOR` |
 | Edit keybindings | `K` | global | Open the keybindings editor screen |
+| Search log | `/` | Log pane only | Start typing an ad-hoc regex search, independent of the `.tat` filters |
+| Jump to next match | `n` | Log pane only | Move the cursor to the next line matching the last search |
+| Jump to previous match | `N` | Log pane only | Move the cursor to the previous line matching the last search |
 
 Two actions use `h` for different things depending on which pane has focus: **move column left** in the Filters pane, **hide unmatched lines** in the Log pane. skim resolves this by checking pane-specific bindings before global ones, so both can share the same key without conflict — see "scope" in the table above. If you rebind one, the other is unaffected.
 
