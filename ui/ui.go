@@ -746,6 +746,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		// Bubble Tea's ExecProcess hands the real terminal to $EDITOR and
+		// back without ever clearing its alt-screen flag, so on return its
+		// renderer thinks the screen still shows whatever it last drew and
+		// only diffs against that -- even though $EDITOR just painted over
+		// (and only partially restored) the same screen. Force a full
+		// repaint so the next frame doesn't get diffed against a frame the
+		// terminal no longer actually shows, which otherwise leaves stale
+		// content on screen indefinitely (same failure mode as the help-bar
+		// overflow fixed in 249e230, different trigger).
+		return m, tea.ClearScreen
 
 	case tea.WindowSizeMsg:
 		m.windowWidth = msg.Width

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"reflect"
 	"skim/filterfiles"
 	"skim/keybindings"
 	"strings"
@@ -379,7 +380,7 @@ func TestUpdateEditorFinishedMsgAppliesEditAndCleansUpTempFile(t *testing.T) {
 	}
 	tmp.Close()
 
-	newModel, _ := m.Update(editorFinishedMsg{tempFile: tmp.Name(), index: 0})
+	newModel, cmd := m.Update(editorFinishedMsg{tempFile: tmp.Name(), index: 0})
 	m = newModel.(model)
 
 	if m.filters.Filters[0].XML.Text != "goodbye" {
@@ -391,17 +392,39 @@ func TestUpdateEditorFinishedMsgAppliesEditAndCleansUpTempFile(t *testing.T) {
 	if _, err := os.Stat(tmp.Name()); !os.IsNotExist(err) {
 		t.Error("temp file was not cleaned up after editorFinishedMsg was handled")
 	}
+	assertClearsScreen(t, cmd)
 }
 
 func TestUpdateEditorFinishedMsgWithErrorLeavesFilterUnchanged(t *testing.T) {
 	filters := []filterfiles.Filter{mustFilter(t, "a")}
 	m := newTestModel(t, filters, "line\n")
 
-	newModel, _ := m.Update(editorFinishedMsg{err: os.ErrInvalid})
+	newModel, cmd := m.Update(editorFinishedMsg{err: os.ErrInvalid})
 	m = newModel.(model)
 
 	if m.filters.Filters[0].XML.Text != "a" {
 		t.Errorf("XML.Text = %q after errored edit, want unchanged %q", m.filters.Filters[0].XML.Text, "a")
+	}
+	assertClearsScreen(t, cmd)
+}
+
+// assertClearsScreen fails the test unless cmd, when run, yields the same
+// message as tea.ClearScreen. Bubble Tea's renderer never turns off its
+// altScreenActive flag around an ExecProcess round trip (see ReleaseTerminal/
+// RestoreTerminal), so its post-editor enterAltScreen call silently no-ops
+// instead of forcing the repaint it normally would -- the renderer then
+// diffs the next frame against a stale cached "last render" that no longer
+// matches what $EDITOR left on the real screen, leaving artifacts on screen
+// indefinitely (same failure mode as the height-overflow bug fixed in
+// 249e230, different trigger). editorFinishedMsg's handler must return
+// tea.ClearScreen to force a real repaint despite that no-op.
+func assertClearsScreen(t *testing.T, cmd tea.Cmd) {
+	t.Helper()
+	if cmd == nil {
+		t.Fatal("Update(editorFinishedMsg) returned a nil Cmd, want tea.ClearScreen")
+	}
+	if !reflect.DeepEqual(cmd(), tea.ClearScreen()) {
+		t.Errorf("Update(editorFinishedMsg) Cmd yielded %#v, want tea.ClearScreen's message", cmd())
 	}
 }
 
