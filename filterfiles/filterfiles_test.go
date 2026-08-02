@@ -292,6 +292,168 @@ func TestExcludingAttributeParsedFromXML(t *testing.T) {
 	}
 }
 
+func TestWriteFilterFileRoundTrips(t *testing.T) {
+	filters := []Filter{
+		mustFilter(t, "^debug", false, true, "#87CEFA"),
+		mustFilter(t, "goodbye", true, false, "#FF0000"),
+	}
+	meta := TextAnalysisToolSettings{Version: "2023-04-25", ShowOnlyFilteredLines: "True"}
+
+	path := t.TempDir() + "/out.tat"
+	if err := WriteFilterFile(path, meta, filters); err != nil {
+		t.Fatalf("WriteFilterFile returned unexpected error: %v", err)
+	}
+
+	settings, err := ReadFilterFile(path)
+	if err != nil {
+		t.Fatalf("ReadFilterFile on the written file returned unexpected error: %v", err)
+	}
+	if settings.Version != "2023-04-25" {
+		t.Errorf("Version = %q, want %q (preserved from meta)", settings.Version, "2023-04-25")
+	}
+	if settings.ShowOnlyFilteredLines != "True" {
+		t.Errorf("ShowOnlyFilteredLines = %q, want %q (preserved from meta)", settings.ShowOnlyFilteredLines, "True")
+	}
+
+	got, err := CompileFilterRegularExpressions(settings)
+	if err != nil {
+		t.Fatalf("CompileFilterRegularExpressions returned unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d filters, want 2", len(got))
+	}
+	if got[0].XML.Text != "^debug" || !got[0].IsEnabled || got[0].BackColor != "#87CEFA" {
+		t.Errorf("filter[0] round-tripped incorrectly: %+v", got[0])
+	}
+	if got[1].XML.Text != "goodbye" || got[1].IsEnabled || !got[1].CaseSensitive {
+		t.Errorf("filter[1] round-tripped incorrectly (want disabled, case-sensitive): %+v", got[1])
+	}
+}
+
+func TestWriteFilterFileWritesLiveStateNotStaleXML(t *testing.T) {
+	// Simulate a filter loaded from a file, then toggled in the UI: the
+	// bool fields change but the original parsed XML strings do not.
+	f := mustFilter(t, "ERROR", false, false, "#FF0000")
+	f.XML.Enabled = "y" // stale: the original file had this filter enabled
+	f.IsEnabled = false // live state: it was toggled off since
+
+	path := t.TempDir() + "/out.tat"
+	if err := WriteFilterFile(path, TextAnalysisToolSettings{}, []Filter{f}); err != nil {
+		t.Fatalf("WriteFilterFile returned unexpected error: %v", err)
+	}
+
+	settings, err := ReadFilterFile(path)
+	if err != nil {
+		t.Fatalf("ReadFilterFile returned unexpected error: %v", err)
+	}
+	if settings.Filters[0].Enabled != "n" {
+		t.Errorf("written enabled=%q, want %q (live state, not the stale XML)", settings.Filters[0].Enabled, "n")
+	}
+}
+
+func TestWriteFilterFileFillsDefaultsWhenMetaIsEmpty(t *testing.T) {
+	path := t.TempDir() + "/out.tat"
+	if err := WriteFilterFile(path, TextAnalysisToolSettings{}, nil); err != nil {
+		t.Fatalf("WriteFilterFile returned unexpected error: %v", err)
+	}
+
+	settings, err := ReadFilterFile(path)
+	if err != nil {
+		t.Fatalf("ReadFilterFile returned unexpected error: %v", err)
+	}
+	if settings.Version == "" {
+		t.Error("Version is empty, want a default value filled in")
+	}
+	if settings.ShowOnlyFilteredLines == "" {
+		t.Error("ShowOnlyFilteredLines is empty, want a default value filled in")
+	}
+}
+
+func TestWriteFilterFileInvalidPath(t *testing.T) {
+	if err := WriteFilterFile("/nonexistent/dir/out.tat", TextAnalysisToolSettings{}, nil); err == nil {
+		t.Fatal("WriteFilterFile with an unwritable path returned no error")
+	}
+}
+
+func TestCountMatches(t *testing.T) {
+	filters := []Filter{
+		mustFilter(t, "^debug", false, true, "#87CEFA"),
+		mustFilter(t, "goodbye", false, true, "#FF0000"),
+		mustFilter(t, "goodbye", false, false, "#000000"), // disabled duplicate, should never count
+	}
+	lines := []string{
+		"debug: one",
+		"goodbye world",
+		"debug: two",
+		"nothing interesting",
+		"goodbye again",
+	}
+
+	counts := CountMatches(filters, lines)
+
+	if len(counts) != 3 {
+		t.Fatalf("got %d counts, want 3 (one per filter)", len(counts))
+	}
+	if counts[0] != 2 {
+		t.Errorf("counts[0] (^debug) = %d, want 2", counts[0])
+	}
+	if counts[1] != 2 {
+		t.Errorf("counts[1] (goodbye) = %d, want 2", counts[1])
+	}
+	if counts[2] != 0 {
+		t.Errorf("counts[2] (disabled duplicate) = %d, want 0", counts[2])
+	}
+}
+
+func TestCountMatchesFirstEnabledFilterWinsAttribution(t *testing.T) {
+	// Both filters match "goodbye world", but CountMatches should attribute
+	// it only to the first enabled filter, matching GetMatchingFilter's
+	// highlighting semantics rather than counting every regex match.
+	filters := []Filter{
+		mustFilter(t, "goodbye", false, true, "#FF0000"),
+		mustFilter(t, "world", false, true, "#00FF00"),
+	}
+
+	counts := CountMatches(filters, []string{"goodbye world"})
+
+	if counts[0] != 1 {
+		t.Errorf("counts[0] = %d, want 1", counts[0])
+	}
+	if counts[1] != 0 {
+		t.Errorf("counts[1] = %d, want 0 (line already attributed to filter 0)", counts[1])
+	}
+}
+
+func TestCountMatchesEmptyInputs(t *testing.T) {
+	if got := CountMatches(nil, []string{"a", "b"}); len(got) != 0 {
+		t.Errorf("CountMatches(nil, ...) = %v, want empty", got)
+	}
+	filters := []Filter{mustFilter(t, "a", false, true, "#000000")}
+	if got := CountMatches(filters, nil); got[0] != 0 {
+		t.Errorf("CountMatches(filters, nil) = %v, want [0]", got)
+	}
+}
+
+func TestCountMatchesSkipsExcludingFilters(t *testing.T) {
+	// An excluding filter hides its matching lines entirely (see IsExcluded);
+	// it shouldn't also "win" highlighting attribution for them in the
+	// match-count column, which would misleadingly suggest a highlighting
+	// filter is coloring lines that are actually hidden.
+	filters := []Filter{
+		mustExcludingFilter(t, "heartbeat", true),
+		mustFilter(t, "heartbeat", false, true, "#87CEFA"),
+	}
+
+	counts := CountMatches(filters, []string{"heartbeat: ok", "other"})
+
+	if counts[0] != 0 {
+		t.Errorf("counts[0] (excluding filter) = %d, want 0", counts[0])
+	}
+	if counts[1] != 1 {
+		t.Errorf("counts[1] (highlighting filter) = %d, want 1 (attributed the line the excluding filter would otherwise have claimed)", counts[1])
+	}
+}
+
 func TestGetMatchingLines(t *testing.T) {
 	filters := []Filter{
 		mustFilter(t, "^debug", false, true, "#87CEFA"),

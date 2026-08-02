@@ -35,14 +35,22 @@ These are parsed from the file and preserved if you round-trip it, but skim does
 
 ## Writing filters
 
-You can hand-write a `.tat` file with any text editor, or build one from inside skim:
+You can hand-write a `.tat` file with any text editor, build one from scratch entirely inside skim, or edit an existing one live:
 
-1. Start from a file with as many `<filter>` rows as you expect to need — skim doesn't currently support adding or removing filter rows from the UI, only editing the ones already in the file. A row with a placeholder `text` and `enabled="n"` works well as a starting point.
-2. Run skim against your log and that filter file.
-3. `tab` to the Filters pane, move the cursor to a row, and press `i` to edit its regex in `$EDITOR`. Save and quit to apply it immediately.
-4. Press `enter`/`space` on the enabled checkbox to turn the filter on and see it take effect in the Log pane.
+1. Run skim against your log and a filter file. skim needs the file to exist and parse (it doesn't start with an empty filter set for a missing path), so to start completely from scratch, first create a minimal one:
+   ```xml
+   <?xml version="1.0" encoding="utf-8" standalone="yes"?>
+   <TextAnalysisTool.NET version="2023-04-25" showOnlyFilteredLines="False">
+     <filters>
+     </filters>
+   </TextAnalysisTool.NET>
+   ```
+2. `tab` to the Filters pane. Press `a` to insert a new, disabled filter after the cursor — this immediately opens its regex text in `$EDITOR`; save and quit to set it. Press `i` on any row (new or existing) to edit its regex the same way at any time.
+3. Press `enter`/`space` on the enabled checkbox to turn a filter on and see it take effect in the Log pane.
+4. Press `d` to delete the filter under the cursor, or `[`/`]` to move it up/down — reordering changes which filter "wins" on lines more than one would otherwise match (see [order matters](#file-structure) above).
 5. Repeat, watching `showing X/Y lines` in the status line as a signal for whether a regex is too broad or too narrow.
+6. Press `s` at any point to write the current filter set back to the file skim was launched with. The status line shows `unsaved filter changes` whenever there's something `s` hasn't captured yet, and confirms `saved to <path>` (or the error) once you do.
 
-To reorder filters (which changes which one "wins" on overlapping matches) or add/remove rows entirely, edit the `.tat` file directly and reload skim.
+`s` only ever writes to the path skim was started with (from `-filter`, or its default) — there's no "save as" to a different file. To branch a filter set into a new file, save normally, then copy the `.tat` file and point `-filter` at the copy.
 
 See the [tutorial](./tutorial-triage-a-log.md) for this whole process applied to a real scenario.

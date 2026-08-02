@@ -1,4 +1,4 @@
-# skim
+# skim 🐮
 
 [![Go](https://github.com/Drahlous/skim/actions/workflows/go.yml/badge.svg)](https://github.com/Drahlous/skim/actions/workflows/go.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
@@ -64,7 +64,13 @@ Usage of skim:
   -filter string
         supply the path to a TAT filter file (default "./examples/simple_filter_two.tat")
   -log string
-        supply the path to the input log file (default "./examples/simple_longer.log")
+        supply the path to the input log file, or - to read from stdin (default "./examples/simple_longer.log")
+```
+
+`-log -` reads the log from stdin instead of a file, so skim can sit at the end of a pipeline. skim reads all of stdin up front before the UI opens, so this works with a finite stream — not `-f`/follow mode, which never ends and would leave skim waiting forever for EOF:
+
+```sh
+kubectl logs my-pod | skim -log - -filter <path/to/filters.tat>
 ```
 
 ## Documentation
