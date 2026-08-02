@@ -405,6 +405,71 @@ func TestUpdateEditorFinishedMsgWithErrorLeavesFilterUnchanged(t *testing.T) {
 	}
 }
 
+func TestMouseWheelScrollsFocusedView(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a"), mustFilter(t, "b")}
+	m := newTestModel(t, filters, "line one\nline two\nline three\n")
+
+	// FilterFocus: wheel should move the filter cursor.
+	newModel, _ := m.Update(tea.MouseMsg{Type: tea.MouseWheelDown})
+	m = newModel.(model)
+	if m.filters.Cursor != 1 {
+		t.Errorf("filters.Cursor after wheel down = %d, want 1", m.filters.Cursor)
+	}
+	if m.log.Cursor != 0 {
+		t.Errorf("log.Cursor changed to %d while FilterFocus, want unchanged 0", m.log.Cursor)
+	}
+
+	newModel, _ = m.Update(tea.MouseMsg{Type: tea.MouseWheelUp})
+	m = newModel.(model)
+	if m.filters.Cursor != 0 {
+		t.Errorf("filters.Cursor after wheel up = %d, want 0", m.filters.Cursor)
+	}
+
+	// Switch to LogFocus: wheel should move the log cursor instead.
+	newModel, _ = m.Update(keyMsg("tab"))
+	m = newModel.(model)
+	newModel, _ = m.Update(tea.MouseMsg{Type: tea.MouseWheelDown})
+	m = newModel.(model)
+	if m.log.Cursor != 1 {
+		t.Errorf("log.Cursor after wheel down in LogFocus = %d, want 1", m.log.Cursor)
+	}
+	if m.filters.Cursor != 0 {
+		t.Errorf("filters.Cursor changed to %d while LogFocus, want unchanged 0", m.filters.Cursor)
+	}
+}
+
+func TestMouseWheelIgnoredWhileSearching(t *testing.T) {
+	m := newTestModel(t, nil, "line one\nline two\n")
+	newModel, _ := m.Update(keyMsg("tab")) // LogFocus
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("/"))
+	m = newModel.(model)
+
+	newModel, _ = m.Update(tea.MouseMsg{Type: tea.MouseWheelDown})
+	m = newModel.(model)
+	if m.log.Cursor != 0 {
+		t.Errorf("log.Cursor changed to %d by a mouse wheel event while searching, want unchanged 0", m.log.Cursor)
+	}
+	if !m.searching {
+		t.Error("searching became false after a mouse wheel event, want unchanged true")
+	}
+}
+
+func TestMouseWheelIgnoredWhileEditingKeybindings(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a"), mustFilter(t, "b")}, "line\n")
+	newModel, _ := m.Update(keyMsg("K"))
+	m = newModel.(model)
+
+	newModel, _ = m.Update(tea.MouseMsg{Type: tea.MouseWheelDown})
+	m = newModel.(model)
+	if m.filters.Cursor != 0 {
+		t.Errorf("filters.Cursor changed to %d by a mouse wheel event while editing keybindings, want unchanged 0", m.filters.Cursor)
+	}
+	if m.kbCursor != 0 {
+		t.Errorf("kbCursor changed to %d by a mouse wheel event, want unchanged 0", m.kbCursor)
+	}
+}
+
 func TestUpdateWindowSizeMsg(t *testing.T) {
 	m := newTestModel(t, nil, "line\n")
 
