@@ -85,13 +85,46 @@ var logStyle = lipgloss.NewStyle().
 	PaddingTop(0).
 	PaddingLeft(0)
 
-func (v *LogView) MakeTable(windowWidth int, windowHeight int, filters []filterfiles.Filter, hideUnmatched bool) table.Model {
+// shownLines reports, for each line index, whether it should be rendered:
+// every line if hideUnmatched is off, otherwise any line that matches an
+// enabled filter plus up to contextLines lines immediately before/after each
+// match (grep -C style), so a hidden match's surrounding context isn't lost
+// along with it.
+func shownLines(lines []string, filters []filterfiles.Filter, hideUnmatched bool, contextLines int) []bool {
+	n := len(lines)
+	shown := make([]bool, n)
+	if !hideUnmatched {
+		for i := range shown {
+			shown[i] = true
+		}
+		return shown
+	}
+
+	for i, line := range lines {
+		if _, match := filterfiles.GetMatchingFilter(filters, line); match {
+			lo, hi := i-contextLines, i+contextLines
+			if lo < 0 {
+				lo = 0
+			}
+			if hi >= n {
+				hi = n - 1
+			}
+			for j := lo; j <= hi; j++ {
+				shown[j] = true
+			}
+		}
+	}
+	return shown
+}
+
+func (v *LogView) MakeTable(windowWidth int, windowHeight int, filters []filterfiles.Filter, hideUnmatched bool, contextLines int) table.Model {
 	columns := []table.Column{
 		{Title: "#", Width: 4},
 		{Title: "Line", Width: windowWidth - 10}, // TODO: Avoid hardcoding this offset
 	}
 
 	rows := []table.Row{}
+	shown := shownLines(v.Lines, filters, hideUnmatched, contextLines)
 
 	// cursorRow tracks the position, within the visible rows actually
 	// rendered, of the last row at or before v.Cursor's line index. v.Cursor
@@ -102,28 +135,37 @@ func (v *LogView) MakeTable(windowWidth int, windowHeight int, filters []filterf
 	cursorRow := 0
 
 	for i, line := range v.Lines {
+		if !shown[i] {
+			continue
+		}
+
 		// +1 Offset to make the first line number 1
 		lineNumber := i + 1
 
 		// Replace tabs with spaces
 		line = strings.ReplaceAll(line, "\t", "    ")
 
-		// Do any filters match this line?
-		filter, match := filterfiles.GetMatchingFilter(filters, line)
-		if match == true {
+		// A line matching an enabled excluding filter is always hidden,
+		// regardless of hideUnmatched, context radius, or whether it would
+		// otherwise match a highlighting filter or be pulled in as context
+		// around a nearby match.
+		if filterfiles.IsExcluded(filters, line) {
+			continue
+		}
 
+		// Do any filters match this line? Lines shown only as context around
+		// a match (or because hideUnmatched is off) render plainly.
+		filter, match := filterfiles.GetMatchingFilter(filters, line)
+		var row table.Row
+		if match {
 			// Style this log line with the color from the filter
 			style := logStyle
 			style.Background(lipgloss.Color(filter.BackColor))
-
-			row := table.Row{fmt.Sprintf("%d", lineNumber), style.Render(line)}
-			rows = append(rows, row)
-		} else if !hideUnmatched {
-			row := table.Row{fmt.Sprintf("%d", lineNumber), line}
-			rows = append(rows, row)
+			row = table.Row{fmt.Sprintf("%d", lineNumber), style.Render(line)}
 		} else {
-			continue
+			row = table.Row{fmt.Sprintf("%d", lineNumber), line}
 		}
+		rows = append(rows, row)
 
 		if i <= v.Cursor {
 			cursorRow = len(rows) - 1

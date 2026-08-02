@@ -193,6 +193,197 @@ func TestUpdateRegexTextOutOfRange(t *testing.T) {
 	}
 }
 
+func TestAddInsertsAfterCursorAndMovesCursorToIt(t *testing.T) {
+	v := FilterView{
+		Filters: []filterfiles.Filter{
+			mustFilter(t, "a", false, true, "#000000"),
+			mustFilter(t, "b", false, true, "#000000"),
+		},
+		Cursor: 0,
+	}
+
+	v.Add()
+
+	if len(v.Filters) != 3 {
+		t.Fatalf("got %d filters, want 3", len(v.Filters))
+	}
+	if v.Cursor != 1 {
+		t.Errorf("Cursor after Add = %d, want 1 (the new filter, inserted after the old cursor)", v.Cursor)
+	}
+	if v.Filters[0].XML.Text != "a" || v.Filters[2].XML.Text != "b" {
+		t.Errorf("existing filters reordered unexpectedly: %+v", v.Filters)
+	}
+	if v.Filters[1].XML.Text != "" {
+		t.Errorf("new filter text = %q, want empty", v.Filters[1].XML.Text)
+	}
+	if v.Filters[1].IsEnabled {
+		t.Error("new filter should start disabled")
+	}
+	if v.Column != EnabledColumn {
+		t.Errorf("Column after Add = %v, want EnabledColumn", v.Column)
+	}
+}
+
+func TestAddOnEmptyList(t *testing.T) {
+	v := FilterView{}
+
+	v.Add()
+
+	if len(v.Filters) != 1 {
+		t.Fatalf("got %d filters, want 1", len(v.Filters))
+	}
+	if v.Cursor != 0 {
+		t.Errorf("Cursor after Add on empty list = %d, want 0", v.Cursor)
+	}
+}
+
+func TestDeleteRemovesAndClampsCursor(t *testing.T) {
+	v := FilterView{
+		Filters: []filterfiles.Filter{
+			mustFilter(t, "a", false, true, "#000000"),
+			mustFilter(t, "b", false, true, "#000000"),
+		},
+		Cursor: 1,
+	}
+
+	v.Delete()
+
+	if len(v.Filters) != 1 {
+		t.Fatalf("got %d filters, want 1", len(v.Filters))
+	}
+	if v.Filters[0].XML.Text != "a" {
+		t.Errorf("remaining filter = %q, want %q", v.Filters[0].XML.Text, "a")
+	}
+	if v.Cursor != 0 {
+		t.Errorf("Cursor after deleting the last row = %d, want 0 (clamped)", v.Cursor)
+	}
+}
+
+func TestDeleteOnEmptyListIsNoOp(t *testing.T) {
+	v := FilterView{}
+	v.Delete() // should not panic
+	if len(v.Filters) != 0 {
+		t.Errorf("got %d filters, want 0", len(v.Filters))
+	}
+}
+
+func TestDeleteLastFilterLeavesEmptyList(t *testing.T) {
+	v := FilterView{
+		Filters: []filterfiles.Filter{mustFilter(t, "a", false, true, "#000000")},
+		Cursor:  0,
+	}
+
+	v.Delete()
+
+	if len(v.Filters) != 0 {
+		t.Fatalf("got %d filters, want 0", len(v.Filters))
+	}
+	if v.Cursor != 0 {
+		t.Errorf("Cursor after deleting the only filter = %d, want 0", v.Cursor)
+	}
+
+	// Toggle must not panic against an empty list.
+	v.Toggle()
+}
+
+func TestMoveUpAndDown(t *testing.T) {
+	v := FilterView{
+		Filters: []filterfiles.Filter{
+			mustFilter(t, "a", false, true, "#000000"),
+			mustFilter(t, "b", false, true, "#000000"),
+			mustFilter(t, "c", false, true, "#000000"),
+		},
+		Cursor: 1,
+	}
+
+	v.MoveUp()
+	if v.Cursor != 0 {
+		t.Errorf("Cursor after MoveUp = %d, want 0", v.Cursor)
+	}
+	texts := []string{v.Filters[0].XML.Text, v.Filters[1].XML.Text, v.Filters[2].XML.Text}
+	if texts[0] != "b" || texts[1] != "a" || texts[2] != "c" {
+		t.Errorf("filter order after MoveUp = %v, want [b a c]", texts)
+	}
+
+	v.MoveDown()
+	if v.Cursor != 1 {
+		t.Errorf("Cursor after MoveDown = %d, want 1", v.Cursor)
+	}
+	texts = []string{v.Filters[0].XML.Text, v.Filters[1].XML.Text, v.Filters[2].XML.Text}
+	if texts[0] != "a" || texts[1] != "b" || texts[2] != "c" {
+		t.Errorf("filter order after MoveDown = %v, want [a b c] (back to original)", texts)
+	}
+}
+
+func TestMoveUpAtTopIsNoOp(t *testing.T) {
+	v := FilterView{
+		Filters: []filterfiles.Filter{
+			mustFilter(t, "a", false, true, "#000000"),
+			mustFilter(t, "b", false, true, "#000000"),
+		},
+		Cursor: 0,
+	}
+	if moved := v.MoveUp(); moved {
+		t.Error("MoveUp() at top returned true, want false (no-op)")
+	}
+	if v.Cursor != 0 {
+		t.Errorf("Cursor after MoveUp at top = %d, want unchanged 0", v.Cursor)
+	}
+	if v.Filters[0].XML.Text != "a" {
+		t.Errorf("filter order changed after a no-op MoveUp: %v", v.Filters)
+	}
+}
+
+func TestMoveDownAtBottomIsNoOp(t *testing.T) {
+	v := FilterView{
+		Filters: []filterfiles.Filter{
+			mustFilter(t, "a", false, true, "#000000"),
+			mustFilter(t, "b", false, true, "#000000"),
+		},
+		Cursor: 1,
+	}
+	if moved := v.MoveDown(); moved {
+		t.Error("MoveDown() at bottom returned true, want false (no-op)")
+	}
+	if v.Cursor != 1 {
+		t.Errorf("Cursor after MoveDown at bottom = %d, want unchanged 1", v.Cursor)
+	}
+	if v.Filters[1].XML.Text != "b" {
+		t.Errorf("filter order changed after a no-op MoveDown: %v", v.Filters)
+	}
+}
+
+func TestMoveUpDownOnEmptyOrSingleListIsNoOp(t *testing.T) {
+	empty := FilterView{}
+	if empty.MoveUp() || empty.MoveDown() {
+		t.Error("MoveUp/MoveDown on an empty list returned true, want false")
+	}
+
+	single := FilterView{Filters: []filterfiles.Filter{mustFilter(t, "a", false, true, "#000000")}}
+	if single.MoveUp() || single.MoveDown() {
+		t.Error("MoveUp/MoveDown on a single-element list returned true, want false")
+	}
+	if single.Filters[0].XML.Text != "a" {
+		t.Error("single-element list should be unaffected by MoveUp/MoveDown")
+	}
+}
+
+func TestMoveUpDownReturnTrueWhenTheyActuallyMove(t *testing.T) {
+	v := FilterView{
+		Filters: []filterfiles.Filter{
+			mustFilter(t, "a", false, true, "#000000"),
+			mustFilter(t, "b", false, true, "#000000"),
+		},
+		Cursor: 1,
+	}
+	if moved := v.MoveUp(); !moved {
+		t.Error("MoveUp() with room to move returned false, want true")
+	}
+	if moved := v.MoveDown(); !moved {
+		t.Error("MoveDown() with room to move returned false, want true")
+	}
+}
+
 func TestRenderShowsSelectedColumnAsBraces(t *testing.T) {
 	v := FilterView{
 		Filters: []filterfiles.Filter{
@@ -203,7 +394,7 @@ func TestRenderShowsSelectedColumnAsBraces(t *testing.T) {
 		Column: EnabledColumn,
 	}
 
-	out := v.Render(120, 30)
+	out := v.Render(120, 30, nil)
 
 	if !strings.Contains(out, "{x}") {
 		t.Errorf("expected selected enabled checkbox to render as {x}, got:\n%s", out)
@@ -226,7 +417,7 @@ func TestRenderMovesSelectionWithColumn(t *testing.T) {
 		Column:  CaseSensitiveColumn,
 	}
 
-	out := v.Render(120, 30)
+	out := v.Render(120, 30, nil)
 
 	lines := strings.Split(out, "\n")
 	if len(lines) < 2 {
@@ -242,6 +433,67 @@ func TestRenderMovesSelectionWithColumn(t *testing.T) {
 	}
 }
 
+func TestRenderMarksExcludingFilters(t *testing.T) {
+	excluding := mustFilter(t, "heartbeat", false, true, "#000000")
+	excluding.Excluding = true
+
+	v := FilterView{
+		Filters: []filterfiles.Filter{
+			excluding,
+			mustFilter(t, "ERROR", false, true, "#FF0000"),
+		},
+		Cursor: 0,
+	}
+
+	out := v.Render(120, 30, nil)
+
+	if !strings.Contains(out, "! heartbeat") {
+		t.Errorf("expected the excluding filter's regex to be marked with \"! \", got:\n%s", out)
+	}
+	if strings.Contains(out, "! ERROR") {
+		t.Errorf("non-excluding filter should not be marked, got:\n%s", out)
+	}
+}
+
+func TestRenderShowsMatchCounts(t *testing.T) {
+	v := FilterView{
+		Filters: []filterfiles.Filter{
+			mustFilter(t, "^debug", false, true, "#87CEFA"),
+			mustFilter(t, "goodbye", false, true, "#FF0000"),
+		},
+	}
+
+	out := v.Render(120, 30, []int{214, 3})
+
+	lines := strings.Split(out, "\n")
+	if len(lines) < 3 {
+		t.Fatalf("expected a header and two rows, got %d lines", len(lines))
+	}
+	if !strings.Contains(lines[1], "214") {
+		t.Errorf("row 0 missing its match count, got: %q", lines[1])
+	}
+	if !strings.Contains(lines[2], "3") {
+		t.Errorf("row 1 missing its match count, got: %q", lines[2])
+	}
+}
+
+func TestRenderMatchCountsDefaultToZeroWhenMissing(t *testing.T) {
+	v := FilterView{
+		Filters: []filterfiles.Filter{mustFilter(t, "a", false, true, "#000000")},
+	}
+
+	// nil and short counts slices should both be handled without panicking.
+	out := v.Render(120, 30, nil)
+	if !strings.Contains(out, "0") {
+		t.Errorf("expected a zero count with nil counts, got: %q", out)
+	}
+
+	out = v.Render(120, 30, []int{})
+	if !strings.Contains(out, "0") {
+		t.Errorf("expected a zero count with an empty counts slice, got: %q", out)
+	}
+}
+
 func TestRenderScrollsToKeepCursorVisible(t *testing.T) {
 	var filters []filterfiles.Filter
 	for i := 0; i < 10; i++ {
@@ -249,7 +501,7 @@ func TestRenderScrollsToKeepCursorVisible(t *testing.T) {
 	}
 	v := FilterView{Filters: filters, Cursor: 9}
 
-	out := v.Render(80, 30)
+	out := v.Render(80, 30, nil)
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 
 	// header + visibleHeight rows

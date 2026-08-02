@@ -98,7 +98,7 @@ func TestMakeTableHidesOrShowsUnmatchedLines(t *testing.T) {
 	v := LogView{Lines: []string{"debug: one", "info: two", "debug: three"}}
 
 	t.Run("hides unmatched lines", func(t *testing.T) {
-		table := v.MakeTable(100, 30, filters, true)
+		table := v.MakeTable(100, 30, filters, true, 0)
 		rows := table.Rows()
 		if len(rows) != 2 {
 			t.Fatalf("got %d rows, want 2 (only matching lines)", len(rows))
@@ -111,7 +111,7 @@ func TestMakeTableHidesOrShowsUnmatchedLines(t *testing.T) {
 	})
 
 	t.Run("shows unmatched lines", func(t *testing.T) {
-		table := v.MakeTable(100, 30, filters, false)
+		table := v.MakeTable(100, 30, filters, false, 0)
 		rows := table.Rows()
 		if len(rows) != 3 {
 			t.Fatalf("got %d rows, want 3 (all lines)", len(rows))
@@ -121,7 +121,7 @@ func TestMakeTableHidesOrShowsUnmatchedLines(t *testing.T) {
 
 func TestMakeTableLineNumbersAreOneIndexed(t *testing.T) {
 	v := LogView{Lines: []string{"first", "second"}}
-	table := v.MakeTable(100, 30, nil, false)
+	table := v.MakeTable(100, 30, nil, false, 0)
 	rows := table.Rows()
 
 	if len(rows) != 2 {
@@ -137,7 +137,7 @@ func TestMakeTableLineNumbersAreOneIndexed(t *testing.T) {
 
 func TestMakeTableReplacesTabsWithSpaces(t *testing.T) {
 	v := LogView{Lines: []string{"a\tb"}}
-	table := v.MakeTable(100, 30, nil, false)
+	table := v.MakeTable(100, 30, nil, false, 0)
 	rows := table.Rows()
 
 	if len(rows) != 1 {
@@ -225,7 +225,7 @@ func TestMakeTableCursorRowTracksVisibleLineWhenLinesAreHidden(t *testing.T) {
 	// "keep two" (3) are visible.
 	v := LogView{Lines: []string{"drop", "keep one", "drop", "keep two"}, Cursor: 2}
 
-	table := v.MakeTable(100, 30, filters, true)
+	table := v.MakeTable(100, 30, filters, true, 0)
 
 	// Cursor (2) points at a hidden line ("drop"); the highlighted row
 	// should land on the last visible row at or before it: "keep one".
@@ -234,8 +234,148 @@ func TestMakeTableCursorRowTracksVisibleLineWhenLinesAreHidden(t *testing.T) {
 	}
 
 	v.Cursor = 3
-	table = v.MakeTable(100, 30, filters, true)
+	table = v.MakeTable(100, 30, filters, true, 0)
 	if got := table.SelectedRow(); got[1] != "keep two" {
 		t.Errorf("SelectedRow() = %v, want row for %q", got, "keep two")
+	}
+}
+
+func mustExcludingFilter(t *testing.T, text string) filterfiles.Filter {
+	t.Helper()
+	re, err := filterfiles.CompileRegex(text, false)
+	if err != nil {
+		t.Fatalf("CompileRegex(%q) failed: %v", text, err)
+	}
+	return filterfiles.Filter{
+		XML:       filterfiles.FilterXML{Text: text},
+		Regex:     re,
+		IsEnabled: true,
+		Excluding: true,
+	}
+}
+
+func TestMakeTableHidesExcludedLinesEvenWithHideUnmatchedOff(t *testing.T) {
+	filters := []filterfiles.Filter{
+		mustFilter(t, "^debug", "#87CEFA"),
+		mustExcludingFilter(t, "noisy"),
+	}
+	v := LogView{Lines: []string{"debug: one", "noisy: skip me", "info: two"}}
+
+	// hideUnmatched is off, so ordinarily every line would show; the
+	// excluding filter should still remove its match.
+	table := v.MakeTable(100, 30, filters, false, 0)
+	rows := table.Rows()
+
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2 (excluded line dropped)", len(rows))
+	}
+	for _, row := range rows {
+		if strings.Contains(row[1], "noisy") {
+			t.Errorf("row %v should have been excluded, but is present", row)
+		}
+	}
+}
+
+func TestMakeTableExcludingBeatsHighlightingMatch(t *testing.T) {
+	filters := []filterfiles.Filter{
+		mustExcludingFilter(t, "heartbeat"),
+		mustFilter(t, "heartbeat", "#87CEFA"), // would otherwise highlight the same line
+	}
+	v := LogView{Lines: []string{"heartbeat: ok", "other line"}}
+
+	table := v.MakeTable(100, 30, filters, false, 0)
+	rows := table.Rows()
+
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1 (heartbeat line excluded despite also matching a highlighting filter)", len(rows))
+	}
+	if rows[0][1] != "other line" {
+		t.Errorf("remaining row = %v, want the non-excluded line", rows[0])
+	}
+}
+
+func TestMakeTableContextLinesShowsNeighborsOfAMatch(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "^debug", "#87CEFA")}
+	v := LogView{Lines: []string{"info: zero", "info: one", "debug: two", "info: three", "info: four"}}
+
+	t.Run("zero context matches existing hide-unmatched behavior", func(t *testing.T) {
+		table := v.MakeTable(100, 30, filters, true, 0)
+		rows := table.Rows()
+		if len(rows) != 1 {
+			t.Fatalf("got %d rows, want 1 (only the match)", len(rows))
+		}
+		if rows[0][0] != "3" {
+			t.Errorf("row line number = %q, want %q", rows[0][0], "3")
+		}
+	})
+
+	t.Run("context 1 includes one neighbor on each side", func(t *testing.T) {
+		table := v.MakeTable(100, 30, filters, true, 1)
+		rows := table.Rows()
+		if len(rows) != 3 {
+			t.Fatalf("got %d rows, want 3 (match plus one line of context each side), got: %v", len(rows), rows)
+		}
+		got := []string{rows[0][0], rows[1][0], rows[2][0]}
+		want := []string{"2", "3", "4"}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("row %d line number = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("context is clamped at the ends of the log", func(t *testing.T) {
+		table := v.MakeTable(100, 30, filters, true, 10)
+		rows := table.Rows()
+		if len(rows) != 5 {
+			t.Fatalf("got %d rows, want 5 (the whole log, context clamped at both ends)", len(rows))
+		}
+	})
+
+	t.Run("context is irrelevant when hideUnmatched is off", func(t *testing.T) {
+		table := v.MakeTable(100, 30, filters, false, 2)
+		rows := table.Rows()
+		if len(rows) != 5 {
+			t.Fatalf("got %d rows, want 5 (everything already shown)", len(rows))
+		}
+	})
+}
+
+func TestMakeTableContextLinesIncludesUnmatchedNeighborContent(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "^debug", "#87CEFA")}
+	v := LogView{Lines: []string{"info: before", "debug: match"}}
+
+	table := v.MakeTable(100, 30, filters, true, 1)
+	rows := table.Rows()
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+	if !strings.Contains(rows[0][1], "info: before") {
+		t.Errorf("context row = %v, want it to contain the unmatched neighbor's text", rows[0])
+	}
+	if !strings.Contains(rows[1][1], "debug: match") {
+		t.Errorf("matched row = %v, want it to contain the matched line's text", rows[1])
+	}
+}
+
+func TestMakeTableExcludedLineStaysHiddenEvenAsContext(t *testing.T) {
+	// A line that would otherwise be pulled in as context around a nearby
+	// match must still be dropped if it independently matches an excluding
+	// filter: exclusion is unconditional, regardless of *why* a line would
+	// otherwise have been shown.
+	filters := []filterfiles.Filter{
+		mustFilter(t, "^debug", "#87CEFA"),
+		mustExcludingFilter(t, "secret"),
+	}
+	v := LogView{Lines: []string{"secret: redacted", "debug: match"}}
+
+	table := v.MakeTable(100, 30, filters, true, 1)
+	rows := table.Rows()
+
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1 (the excluded neighbor must not appear as context), rows: %v", len(rows), rows)
+	}
+	if !strings.Contains(rows[0][1], "debug: match") {
+		t.Errorf("remaining row = %v, want the matched line", rows[0])
 	}
 }
