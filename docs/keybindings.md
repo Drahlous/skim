@@ -26,6 +26,9 @@ Every action in skim is rebindable. This page lists the defaults and explains ho
 | Save filters to file | `s` | global | Write the current filter set back to the `.tat` file skim was launched with |
 | Show more context around matches | `+` | Log pane only | Increase the number of unmatched lines shown around each match when hide-unmatched is on |
 | Show less context around matches | `-` | Log pane only | Decrease the context radius (down to 0) |
+| Jump to top | `g` | Log pane only | Move the cursor to the first log line |
+| Jump to bottom | `G` | Log pane only | Move the cursor to the last log line |
+| Jump to line number | `:` | Log pane only | Start typing a 1-indexed line number; `enter` jumps to it (clamped to the log's bounds), `esc` cancels |
 
 Two actions use `h` for different things depending on which pane has focus: **move column left** in the Filters pane, **hide unmatched lines** in the Log pane. skim resolves this by checking pane-specific bindings before global ones, so both can share the same key without conflict — see "scope" in the table above. If you rebind one, the other is unaffected.
 

@@ -32,6 +32,9 @@ const (
 	IncreaseContext       Action = "increase_context"
 	DecreaseContext       Action = "decrease_context"
 	ToggleHelp            Action = "toggle_help"
+	JumpToTop             Action = "jump_to_top"
+	JumpToBottom          Action = "jump_to_bottom"
+	JumpToLine            Action = "jump_to_line"
 )
 
 // Scope limits which focused view an action's keys are considered in.
@@ -78,6 +81,9 @@ var Registry = []Spec{
 	{IncreaseContext, ScopeLogView, "show more context around matches", []string{"+"}},
 	{DecreaseContext, ScopeLogView, "show less context around matches", []string{"-"}},
 	{ToggleHelp, ScopeGlobal, "show/hide keybindings help", []string{"?"}},
+	{JumpToTop, ScopeLogView, "jump to top", []string{"g"}},
+	{JumpToBottom, ScopeLogView, "jump to bottom", []string{"G"}},
+	{JumpToLine, ScopeLogView, "jump to line number", []string{":"}},
 }
 
 // SpecFor returns the registry entry for an action.
