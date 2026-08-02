@@ -136,7 +136,7 @@ func TestRenderKeyBindings(t *testing.T) {
 	km := keybindings.Defaults()
 
 	t.Run("filter focus", func(t *testing.T) {
-		out := renderKeyBindings(km, FilterFocus)
+		out := renderKeyBindings(km, FilterFocus, 0)
 
 		for _, want := range []string{"quit", "edit regex", "move column", "keybindings"} {
 			if !strings.Contains(out, want) {
@@ -152,7 +152,7 @@ func TestRenderKeyBindings(t *testing.T) {
 	})
 
 	t.Run("log focus", func(t *testing.T) {
-		out := renderKeyBindings(km, LogFocus)
+		out := renderKeyBindings(km, LogFocus, 0)
 
 		for _, want := range []string{"quit", "hide unmatched", "keybindings"} {
 			if !strings.Contains(out, want) {

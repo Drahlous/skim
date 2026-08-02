@@ -123,11 +123,17 @@ func displayKeys(keys []string, sep string) string {
 	return strings.Join(labels, sep)
 }
 
+// keyBindingSep separates individual "key: description" entries in the
+// bottom help bar.
+const keyBindingSep = "  |  "
+
 // renderKeyBindings builds the bottom help bar, showing only the bindings
 // that are actually relevant to the currently focused pane (plus the
 // always-available global bindings), so it doesn't advertise keys that do
-// nothing in the current context.
-func renderKeyBindings(km keybindings.KeyMap, focus Focus) string {
+// nothing in the current context. The result is wrapped to width without
+// ever splitting a single "key: description" entry across lines (see
+// packKeyBindings); width <= 0 leaves it as one unwrapped line.
+func renderKeyBindings(km keybindings.KeyMap, focus Focus, width int) string {
 	parts := []string{
 		fmt.Sprintf("%s: quit", strings.Join(km[keybindings.Quit], "/")),
 	}
@@ -153,9 +159,48 @@ func renderKeyBindings(km keybindings.KeyMap, focus Focus) string {
 	parts = append(parts,
 		fmt.Sprintf("%s: save filters", strings.Join(km[keybindings.SaveFilters], "/")),
 		fmt.Sprintf("%s: keybindings", strings.Join(km[keybindings.OpenKeybindingsScreen], "/")),
+		fmt.Sprintf("%s: hide help", strings.Join(km[keybindings.ToggleHelp], "/")),
 	)
 
-	return strings.Join(parts, "  |  ")
+	return packKeyBindings(parts, width)
+}
+
+// renderHelpHint is the collapsed form of the bottom help bar shown while
+// help is hidden: just enough to tell the user how to bring it back, so it
+// doesn't consume a full line of screen space by default.
+func renderHelpHint(km keybindings.KeyMap) string {
+	return fmt.Sprintf("%s: show keybindings", strings.Join(km[keybindings.ToggleHelp], "/"))
+}
+
+// packKeyBindings joins parts with keyBindingSep, greedily wrapping onto a
+// new line whenever the next part would overflow width, so a narrow
+// terminal breaks between entries rather than splitting one down the
+// middle. A part wider than width by itself is placed alone on its line
+// rather than being split. width <= 0 (no WindowSizeMsg received yet)
+// disables wrapping entirely.
+func packKeyBindings(parts []string, width int) string {
+	if width <= 0 {
+		return strings.Join(parts, keyBindingSep)
+	}
+
+	var lines []string
+	line := ""
+	for _, p := range parts {
+		candidate := p
+		if line != "" {
+			candidate = line + keyBindingSep + p
+		}
+		if line != "" && lipgloss.Width(candidate) > width {
+			lines = append(lines, line)
+			line = p
+		} else {
+			line = candidate
+		}
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // editorFinishedMsg is sent once the external $EDITOR process invoked to
@@ -206,6 +251,7 @@ type model struct {
 	hideUnmatched bool // whether lines are displayed that do not match an active filter
 	contextLines  int  // how many lines of context to show around a match when hideUnmatched is on
 	keyMap        keybindings.KeyMap
+	showHelp      bool // whether the full keybindings help bar is expanded
 
 	// Keybindings editor screen state
 	editingKeybindings bool
@@ -511,6 +557,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.contextLines > 0 {
 				m.contextLines--
 			}
+
+		case keybindings.ToggleHelp:
+			m.showHelp = !m.showHelp
 		}
 
 	case editorFinishedMsg:
@@ -579,10 +628,13 @@ func (m model) View() string {
 
 	s += renderStatusLine(m) + "\n"
 
-	if m.searching {
+	switch {
+	case m.searching:
 		s += renderSearchPrompt(m) + "\n"
-	} else {
-		s += renderKeyBindings(m.keyMap, m.focus) + "\n"
+	case m.showHelp:
+		s += renderKeyBindings(m.keyMap, m.focus, m.windowWidth) + "\n"
+	default:
+		s += renderHelpHint(m.keyMap) + "\n"
 	}
 
 	// Send the UI for rendering
