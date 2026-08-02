@@ -605,6 +605,131 @@ func TestKeybindingsScreenCaptureEscCancelsWithoutRebinding(t *testing.T) {
 	}
 }
 
+func TestKeybindingsScreenAddKeyAppendsWithoutOverwriting(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+
+	newModel, _ := m.Update(keyMsg("K"))
+	m = newModel.(model)
+	action := keybindings.Registry[m.kbCursor].Action // Quit: ["ctrl+c", "q"]
+	before := append([]string(nil), m.keyMap[action]...)
+
+	newModel, _ = m.Update(keyMsg("a"))
+	m = newModel.(model)
+	if !m.kbCapturing || !m.kbAppending {
+		t.Fatalf("after \"a\": kbCapturing=%v kbAppending=%v, want both true", m.kbCapturing, m.kbAppending)
+	}
+
+	newModel, _ = m.Update(keyMsg("z"))
+	m = newModel.(model)
+	if m.kbCapturing || m.kbAppending {
+		t.Errorf("after captured key: kbCapturing=%v kbAppending=%v, want both false", m.kbCapturing, m.kbAppending)
+	}
+
+	want := append(append([]string(nil), before...), "z")
+	if !equalStrings(m.keyMap[action], want) {
+		t.Errorf("keyMap[%v] = %v, want %v (existing keys preserved)", action, m.keyMap[action], want)
+	}
+	if m.kbKeyCursor != len(want)-1 {
+		t.Errorf("kbKeyCursor = %d, want %d (the newly added key)", m.kbKeyCursor, len(want)-1)
+	}
+
+	loaded, err := keybindings.Load()
+	if err != nil {
+		t.Fatalf("keybindings.Load() returned unexpected error: %v", err)
+	}
+	if !equalStrings(loaded[action], want) {
+		t.Errorf("persisted keyMap[%v] = %v, want %v", action, loaded[action], want)
+	}
+}
+
+func TestKeybindingsScreenAddDuplicateKeyIsNoOp(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+
+	newModel, _ := m.Update(keyMsg("K"))
+	m = newModel.(model)
+	action := keybindings.Registry[m.kbCursor].Action
+	before := append([]string(nil), m.keyMap[action]...)
+
+	newModel, _ = m.Update(keyMsg("a"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg(before[0])) // re-add a key that's already bound
+	m = newModel.(model)
+
+	if !equalStrings(m.keyMap[action], before) {
+		t.Errorf("keyMap[%v] = %v, want unchanged %v after re-adding an existing key", action, m.keyMap[action], before)
+	}
+}
+
+func TestKeybindingsScreenDeleteSelectedKeyOnly(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+
+	newModel, _ := m.Update(keyMsg("K"))
+	m = newModel.(model)
+	action := keybindings.Registry[m.kbCursor].Action // Quit: ["ctrl+c", "q"]
+	if len(m.keyMap[action]) != 2 {
+		t.Fatalf("precondition: keyMap[%v] = %v, want 2 keys", action, m.keyMap[action])
+	}
+	keep := m.keyMap[action][0]
+	remove := m.keyMap[action][1]
+
+	// Select the second key (index 1) and delete only that one.
+	newModel, _ = m.Update(keyMsg("l"))
+	m = newModel.(model)
+	if m.kbKeyCursor != 1 {
+		t.Fatalf("precondition: kbKeyCursor = %d after \"l\", want 1", m.kbKeyCursor)
+	}
+	newModel, _ = m.Update(keyMsg("d"))
+	m = newModel.(model)
+
+	if !equalStrings(m.keyMap[action], []string{keep}) {
+		t.Errorf("keyMap[%v] = %v, want [%q] (only %q removed)", action, m.keyMap[action], keep, remove)
+	}
+	if m.kbKeyCursor != 0 {
+		t.Errorf("kbKeyCursor = %d after deleting the last key, want 0", m.kbKeyCursor)
+	}
+
+	loaded, err := keybindings.Load()
+	if err != nil {
+		t.Fatalf("keybindings.Load() returned unexpected error: %v", err)
+	}
+	if !equalStrings(loaded[action], []string{keep}) {
+		t.Errorf("persisted keyMap[%v] = %v, want [%q]", action, loaded[action], keep)
+	}
+}
+
+func TestKeybindingsScreenDeleteDownToNoKeysShowsNone(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+
+	newModel, _ := m.Update(keyMsg("K"))
+	m = newModel.(model)
+	action := keybindings.Registry[m.kbCursor].Action
+
+	for len(m.keyMap[action]) > 0 {
+		newModel, _ = m.Update(keyMsg("d"))
+		m = newModel.(model)
+	}
+
+	if len(m.keyMap[action]) != 0 {
+		t.Fatalf("keyMap[%v] = %v, want empty", action, m.keyMap[action])
+	}
+	out := m.renderKeybindingsScreen()
+	if !strings.Contains(out, "(none)") {
+		t.Errorf("renderKeybindingsScreen with no keys bound should show \"(none)\", got:\n%s", out)
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestSearchOpensCapturesAndJumpsOnEnter(t *testing.T) {
 	m := newTestModel(t, nil, "alpha\nbravo\ncharlie\nbravo two\n")
 	newModel, _ := m.Update(keyMsg("tab")) // LogFocus
