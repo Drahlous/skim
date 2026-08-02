@@ -115,20 +115,26 @@ func cell(content string, width int) string {
 }
 
 // Render draws the filters table: a header row plus one row per filter,
-// each with an enabled checkbox, the regex text (colored by the filter's
-// BackColor), and a case-sensitivity checkbox. The row/column under the
-// cursor is marked with braces instead of brackets, and highlighted pink
-// via selectedCellStyle, so the highlight always matches the cell that
-// enter/space would toggle.
-func (v *FilterView) Render(windowWidth int, windowHeight int) string {
+// each with an enabled checkbox, a live match count, the regex text
+// (colored by the filter's BackColor), and a case-sensitivity checkbox. The
+// row/column under the cursor is marked with braces instead of brackets,
+// and highlighted pink via selectedCellStyle, so the highlight always
+// matches the cell that enter/space would toggle.
+//
+// counts holds each filter's current match count, indexed the same as
+// v.Filters (see filterfiles.CountMatches); a short or nil counts is
+// treated as all-zero, so callers that don't have counts handy can pass nil.
+func (v *FilterView) Render(windowWidth int, windowHeight int, counts []int) string {
 	enabledWidth := 3
+	countWidth := 6
 	caseWidth := 4
-	regexWidth := windowWidth - 16 // TODO: Avoid hardcoding this offset
+	regexWidth := windowWidth - 16 - countWidth - 1 // TODO: Avoid hardcoding this offset
 
 	var b strings.Builder
 
 	header := lipgloss.JoinHorizontal(lipgloss.Left,
 		cell("", enabledWidth), " ",
+		headerStyle.Render(cell("#", countWidth)), " ",
 		headerStyle.Render(cell("Regex", regexWidth)), " ",
 		headerStyle.Render(cell("Aa", caseWidth)),
 	)
@@ -179,8 +185,15 @@ func (v *FilterView) Render(windowWidth int, windowHeight int) string {
 		style.Background(lipgloss.Color(filter.BackColor))
 		regexCell := style.Render(cell(filter.XML.Text, regexWidth))
 
+		count := 0
+		if i < len(counts) {
+			count = counts[i]
+		}
+		countCell := cell(fmt.Sprintf("%d", count), countWidth)
+
 		row := lipgloss.JoinHorizontal(lipgloss.Left,
 			cell(enabledCell, enabledWidth), " ",
+			countCell, " ",
 			regexCell, " ",
 			cell(caseCell, caseWidth),
 		)

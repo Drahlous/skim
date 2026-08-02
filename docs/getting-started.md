@@ -28,16 +28,16 @@ skim's screen is split into two panes, plus a status line and a help bar at the 
 │  ...                                          │
 └─────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────┐
-│      Regex                            Aa     │   <- Filters pane
-│  [x] ^debug                           [ ]     │
-│  [x] goodbye                          [ ]     │
+│      #      Regex                     Aa     │   <- Filters pane
+│  [x]  1     ^debug                    [ ]     │
+│  [x]  1     goodbye                   [ ]     │
 └─────────────────────────────────────────────┘
 hide unmatched: ON  |  showing 4/6 lines
 q: quit  h: hide unmatched  K: keybindings
 ```
 
 - **Log pane** (top) — every line of the log file, numbered, colored by whichever filter matched it.
-- **Filters pane** (bottom) — one row per filter from your `.tat` file: an enabled checkbox, the regex text (colored with that filter's own background color), and a case-sensitivity checkbox.
+- **Filters pane** (bottom) — one row per filter from your `.tat` file: an enabled checkbox, a live match count, the regex text (colored with that filter's own background color), and a case-sensitivity checkbox.
 
 The pane with keyboard focus is outlined in a highlighted border (pink by default). Press `tab` to switch focus between them.
 
@@ -70,6 +70,12 @@ This is the core workflow the rest of the docs build on. Press `h` while the **L
 The status line always tells you which mode you're in and how many lines are currently visible out of the total: `hide unmatched: ON | showing 4/6 lines`.
 
 In practice this means: start with `hide unmatched` on and no filters (or all filters disabled) to see nothing, then enable filters one at a time to pull exactly the lines you care about out of the log. You never need to scroll past everything else to find them.
+
+## Context lines and match counts
+
+Hiding unmatched lines is powerful but throws away sequence — you see the line that errored, but not what happened immediately before or after it. Press `+` in the Log pane to show a line of unmatched context on either side of every match (`grep -C` style); press it again to widen the radius, `-` to narrow it back down to 0. Context lines render plainly (uncolored), so they're easy to tell apart from an actual match. The current radius shows in the status line as `context: ±N` whenever it's non-zero.
+
+The Filters pane's `#` column shows each filter's current match count — how many lines it's the one coloring, following the same first-enabled-filter-wins rule as highlighting (see [filter files](./filter-files.md#file-structure)). It updates live as you toggle filters, edit regexes, or the underlying counts otherwise change, and is a quick way to spot which filter is dominating a log before you've scrolled through it.
 
 ## Editing a filter's regex live
 
