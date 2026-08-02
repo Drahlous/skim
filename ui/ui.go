@@ -271,7 +271,9 @@ type model struct {
 	// Keybindings editor screen state
 	editingKeybindings bool
 	kbCursor           int  // which action row is selected
+	kbKeyCursor        int  // which of the selected action's keys is selected (left/right, "d" targets this one)
 	kbCapturing        bool // waiting for a keypress to bind to the selected action
+	kbAppending        bool // while kbCapturing: whether the captured key is added to the existing keys ("a") rather than replacing them ("enter")
 
 	// Log search state
 	searching      bool          // capturing a search pattern from the user
@@ -349,19 +351,30 @@ func (m model) Init() tea.Cmd {
 }
 
 // updateKeybindingsScreen handles key presses while the keybindings editor
-// screen is open: it is either browsing the action list, or capturing the
-// next keypress to bind to the selected action.
+// screen is open: it is either browsing the action list (and, within the
+// selected action's keys, which one is targeted by "d"), or capturing the
+// next keypress to bind to the selected action -- replacing all of its
+// existing keys ("enter") or adding to them ("a").
 func (m model) updateKeybindingsScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.kbCapturing {
 		key := msg.String()
 		if key != "esc" {
 			action := keybindings.Registry[m.kbCursor].Action
-			m.keyMap[action] = []string{key}
+			if m.kbAppending {
+				if !containsKey(m.keyMap[action], key) {
+					m.keyMap[action] = append(m.keyMap[action], key)
+					m.kbKeyCursor = len(m.keyMap[action]) - 1
+				}
+			} else {
+				m.keyMap[action] = []string{key}
+				m.kbKeyCursor = 0
+			}
 			// Best-effort: if we can't persist, the rebinding still applies
 			// for the rest of this session.
 			keybindings.Save(m.keyMap)
 		}
 		m.kbCapturing = false
+		m.kbAppending = false
 		return m, nil
 	}
 
@@ -372,18 +385,63 @@ func (m model) updateKeybindingsScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		if m.kbCursor > 0 {
 			m.kbCursor--
+			m.kbKeyCursor = 0
 		}
 
 	case "down", "j":
 		if m.kbCursor < len(keybindings.Registry)-1 {
 			m.kbCursor++
+			m.kbKeyCursor = 0
+		}
+
+	case "left", "h":
+		if m.kbKeyCursor > 0 {
+			m.kbKeyCursor--
+		}
+
+	case "right", "l":
+		action := keybindings.Registry[m.kbCursor].Action
+		if m.kbKeyCursor < len(m.keyMap[action])-1 {
+			m.kbKeyCursor++
 		}
 
 	case "enter":
 		m.kbCapturing = true
+		m.kbAppending = false
+
+	case "a":
+		m.kbCapturing = true
+		m.kbAppending = true
+
+	case "d":
+		action := keybindings.Registry[m.kbCursor].Action
+		keys := m.keyMap[action]
+		if m.kbKeyCursor < len(keys) {
+			remaining := make([]string, 0, len(keys)-1)
+			remaining = append(remaining, keys[:m.kbKeyCursor]...)
+			remaining = append(remaining, keys[m.kbKeyCursor+1:]...)
+			m.keyMap[action] = remaining
+			if m.kbKeyCursor > 0 && m.kbKeyCursor >= len(remaining) {
+				m.kbKeyCursor--
+			}
+			// Best-effort: if we can't persist, the deletion still applies
+			// for the rest of this session.
+			keybindings.Save(m.keyMap)
+		}
 	}
 
 	return m, nil
+}
+
+// containsKey reports whether key is already among keys, so appending a
+// binding a second time is a no-op instead of creating a duplicate entry.
+func containsKey(keys []string, key string) bool {
+	for _, k := range keys {
+		if k == key {
+			return true
+		}
+	}
+	return false
 }
 
 // updateSearchInput handles key presses while a search pattern is being
@@ -571,7 +629,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keybindings.OpenKeybindingsScreen:
 			m.editingKeybindings = true
 			m.kbCursor = 0
+			m.kbKeyCursor = 0
 			m.kbCapturing = false
+			m.kbAppending = false
 
 		case keybindings.Search:
 			m.searching = true
@@ -695,11 +755,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // renderKeybindingsScreen renders the full-screen keybindings editor: every
-// rebindable action, its current key(s), and the row under the cursor.
+// rebindable action, its current key(s), and the row under the cursor. The
+// selected row shows each key as its own cell, braced if it's the one
+// left/right selected "d" would delete, so a multi-key action's bindings can
+// be added to or removed individually instead of only replaced wholesale.
 func (m model) renderKeybindingsScreen() string {
 	var b strings.Builder
 
-	b.WriteString("Keybindings  —  up/down: select   enter: rebind (esc cancels)   esc/q: close\n\n")
+	b.WriteString("Keybindings  —  up/down: select action   left/right: select key   enter: replace all   a: add key   d: delete key   esc/q: close\n\n")
 
 	for i, spec := range keybindings.Registry {
 		cursor := "  "
@@ -707,15 +770,42 @@ func (m model) renderKeybindingsScreen() string {
 			cursor = "> "
 		}
 
-		keys := displayKeys(m.keyMap[spec.Action], ", ")
-		if m.kbCapturing && i == m.kbCursor {
+		var keys string
+		switch {
+		case m.kbCapturing && i == m.kbCursor:
 			keys = "press a key..."
+		case i == m.kbCursor:
+			keys = renderKeyCells(m.keyMap[spec.Action], m.kbKeyCursor)
+		default:
+			keys = displayKeys(m.keyMap[spec.Action], ", ")
 		}
 
 		b.WriteString(fmt.Sprintf("%s%-24s %s\n", cursor, spec.Description, keys))
 	}
 
 	return baseStyle.Render(b.String())
+}
+
+// renderKeyCells renders an action's keys as individual, comma-separated
+// cells, wrapping the one at selected in braces (matching the {x}/[x]
+// selected-vs-unselected convention filterview.Render uses) so it's clear
+// which single key "d" would delete. An action with no keys left renders as
+// "(none)" rather than an empty string.
+func renderKeyCells(keys []string, selected int) string {
+	if len(keys) == 0 {
+		return "(none)"
+	}
+
+	cells := make([]string, len(keys))
+	for i, k := range keys {
+		label := displayKey(k)
+		if i == selected {
+			cells[i] = "{" + label + "}"
+		} else {
+			cells[i] = label
+		}
+	}
+	return strings.Join(cells, ", ")
 }
 
 // The View method will simply look at the model and return a string.
