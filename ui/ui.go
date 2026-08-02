@@ -307,16 +307,20 @@ func (m model) updateSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchErr = ""
 
 	case "enter":
-		m.searching = false
 		if m.searchText == "" {
+			m.searching = false
 			break
 		}
 		re, err := filterfiles.CompileRegex(m.searchText, false)
 		if err != nil {
+			// Stay in searching mode so the error actually renders (see
+			// renderSearchPrompt, only shown while m.searching), and leave
+			// any previously-successful search untouched so n/N still work
+			// with it after a failed retry.
 			m.searchErr = err.Error()
-			m.hasSearch = false
 			break
 		}
+		m.searching = false
 		m.searchErr = ""
 		m.lastSearch = re
 		m.lastSearchText = m.searchText
@@ -327,7 +331,8 @@ func (m model) updateSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "backspace":
 		if len(m.searchText) > 0 {
-			m.searchText = m.searchText[:len(m.searchText)-1]
+			r := []rune(m.searchText)
+			m.searchText = string(r[:len(r)-1])
 		}
 
 	case " ":

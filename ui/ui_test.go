@@ -7,6 +7,7 @@ import (
 	"skim/keybindings"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -601,7 +602,35 @@ func TestSearchBackspaceAndEscCancel(t *testing.T) {
 	}
 }
 
-func TestSearchInvalidRegexSetsError(t *testing.T) {
+func TestSearchBackspaceRemovesWholeRuneNotJustOneByte(t *testing.T) {
+	m := newTestModel(t, nil, "line\n")
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("/"))
+	m = newModel.(model)
+
+	// "é" is a single rune but two UTF-8 bytes; a byte-based backspace would
+	// leave a dangling, invalid partial byte instead of removing it whole.
+	for _, r := range "café" {
+		newModel, _ = m.Update(keyMsg(string(r)))
+		m = newModel.(model)
+	}
+	if m.searchText != "café" {
+		t.Fatalf("precondition: searchText = %q, want %q", m.searchText, "café")
+	}
+
+	newModel, _ = m.Update(keyMsg("backspace"))
+	m = newModel.(model)
+
+	if m.searchText != "caf" {
+		t.Errorf("searchText after one backspace on %q = %q, want %q", "café", m.searchText, "caf")
+	}
+	if !utf8.ValidString(m.searchText) {
+		t.Errorf("searchText %q is not valid UTF-8 after backspace", m.searchText)
+	}
+}
+
+func TestSearchInvalidRegexSetsErrorAndStaysInSearchMode(t *testing.T) {
 	m := newTestModel(t, nil, "line\n")
 	newModel, _ := m.Update(keyMsg("tab"))
 	m = newModel.(model)
@@ -618,8 +647,57 @@ func TestSearchInvalidRegexSetsError(t *testing.T) {
 	if m.searchErr == "" {
 		t.Error("searchErr is empty after an invalid regex, want an error message")
 	}
-	if m.hasSearch {
-		t.Error("hasSearch = true after an invalid regex, want false")
+	// Must stay in searching mode: renderSearchPrompt (the only place
+	// searchErr is ever displayed) only renders while m.searching is true,
+	// so leaving search mode here would make the error invisible to the
+	// user despite being computed.
+	if !m.searching {
+		t.Error("searching = false after an invalid regex, want true so the error actually renders")
+	}
+}
+
+func TestSearchInvalidRegexRetryDoesNotClobberPreviousSearch(t *testing.T) {
+	m := newTestModel(t, nil, "alpha\nbravo\ncharlie\n")
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+
+	// A first, valid search.
+	newModel, _ = m.Update(keyMsg("/"))
+	m = newModel.(model)
+	for _, r := range "bravo" {
+		newModel, _ = m.Update(keyMsg(string(r)))
+		m = newModel.(model)
+	}
+	newModel, _ = m.Update(keyMsg("enter"))
+	m = newModel.(model)
+	if !m.hasSearch {
+		t.Fatal("precondition: hasSearch should be true after a valid search")
+	}
+
+	// Retry with an invalid pattern.
+	newModel, _ = m.Update(keyMsg("/"))
+	m = newModel.(model)
+	for _, r := range "([unclosed" {
+		newModel, _ = m.Update(keyMsg(string(r)))
+		m = newModel.(model)
+	}
+	newModel, _ = m.Update(keyMsg("enter"))
+	m = newModel.(model)
+
+	if !m.hasSearch {
+		t.Error("hasSearch = false after a failed retry, want the previous valid search to remain usable")
+	}
+	if m.lastSearchText != "bravo" {
+		t.Errorf("lastSearchText = %q after a failed retry, want unchanged %q", m.lastSearchText, "bravo")
+	}
+
+	// n should still work using the previous search.
+	newModel, _ = m.Update(keyMsg("esc")) // dismiss the still-open error prompt first
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("n"))
+	m = newModel.(model)
+	if m.log.Cursor != 1 {
+		t.Errorf("log.Cursor after n post-failed-retry = %d, want 1 (bravo is still the active search)", m.log.Cursor)
 	}
 }
 
