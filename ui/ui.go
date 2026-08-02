@@ -77,7 +77,11 @@ func renderStatusLine(m model) string {
 	total := len(m.log.Lines)
 	shown := len(m.log.Table.Rows())
 
-	return fmt.Sprintf("hide unmatched: %s  |  showing %d/%d lines", hideState, shown, total)
+	line := fmt.Sprintf("hide unmatched: %s  |  showing %d/%d lines", hideState, shown, total)
+	if m.contextLines > 0 {
+		line += fmt.Sprintf("  |  context: ±%d", m.contextLines)
+	}
+	return line
 }
 
 // displayKey renders a raw key string (as stored in a keybindings.KeyMap)
@@ -118,6 +122,7 @@ func renderKeyBindings(km keybindings.KeyMap, focus Focus) string {
 	case LogFocus:
 		parts = append(parts,
 			fmt.Sprintf("%s: hide unmatched", strings.Join(km[keybindings.ToggleHideUnmatched], "/")),
+			fmt.Sprintf("%s/%s: context lines", strings.Join(km[keybindings.IncreaseContext], ","), strings.Join(km[keybindings.DecreaseContext], ",")),
 		)
 	}
 
@@ -172,6 +177,7 @@ type model struct {
 	windowWidth   int
 	windowHeight  int
 	hideUnmatched bool // whether lines are displayed that do not match an active filter
+	contextLines  int  // how many lines of context to show around a match when hideUnmatched is on
 	keyMap        keybindings.KeyMap
 
 	// Keybindings editor screen state
@@ -340,6 +346,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.editingKeybindings = true
 			m.kbCursor = 0
 			m.kbCapturing = false
+
+		case keybindings.IncreaseContext:
+			m.contextLines++
+
+		case keybindings.DecreaseContext:
+			if m.contextLines > 0 {
+				m.contextLines--
+			}
 		}
 
 	case editorFinishedMsg:
@@ -397,10 +411,11 @@ func (m model) View() string {
 	s := ""
 
 	// Make table of filtered log lines
-	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched)
+	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
 	s += m.paneStyle(LogFocus).Render(m.log.Table.View()) + "\n"
 
-	s += m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, m.windowHeight)) + "\n"
+	counts := filterfiles.CountMatches(m.filters.Filters, m.log.Lines)
+	s += m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, m.windowHeight, counts)) + "\n"
 
 	s += renderStatusLine(m) + "\n"
 	s += renderKeyBindings(m.keyMap, m.focus) + "\n"
