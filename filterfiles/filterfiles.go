@@ -210,6 +210,25 @@ func WriteFilterFile(path string, meta TextAnalysisToolSettings, filters []Filte
 	return os.WriteFile(path, out, 0o644)
 }
 
+// GetMatchingFilterIndex is GetMatchingFilter, but returns the index into
+// filters of the matching filter instead of a copy of it, for callers (like
+// a per-line match cache) that need to attribute a match back to its
+// position rather than its value.
+func GetMatchingFilterIndex(filters []Filter, line string) (int, bool) {
+	for i, filter := range filters {
+		// Only continue if this filter is enabled and not an exclusion filter
+		if !filter.IsEnabled || filter.Excluding {
+			continue
+		}
+
+		// Check whether the line matches the filter's regex
+		if filter.Regex.MatchString(line) {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
 // GetMatchingFilter returns the first enabled, non-excluding filter whose
 // regex matches line, for highlighting purposes. Excluding filters are never
 // returned here: they mean "hide this line" rather than "color this line"
@@ -217,21 +236,12 @@ func WriteFilterFile(path string, meta TextAnalysisToolSettings, filters []Filte
 // first (an excluded line should never be shown, regardless of whether it
 // would also match a highlighting filter).
 func GetMatchingFilter(filters []Filter, line string) (Filter, bool) {
-	var filter Filter
-	for _, filter := range filters {
-
-		// Only continue if this filter is enabled and not an exclusion filter
-		if !filter.IsEnabled || filter.Excluding {
-			continue
-		}
-
-		// Check whether the line matches the filter's regex
-		re := filter.Regex
-		if re.MatchString(line) {
-			return filter, true
-		}
+	idx, ok := GetMatchingFilterIndex(filters, line)
+	if !ok {
+		var filter Filter
+		return filter, false
 	}
-	return filter, false
+	return filters[idx], true
 }
 
 // IsExcluded reports whether line matches any enabled excluding filter. An
