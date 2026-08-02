@@ -33,7 +33,7 @@ func run(filter_file string, log_file string) {
 	}
 	scanner := bufio.NewScanner(logfile)
 
-	ui.RunUI(filters, scanner)
+	ui.RunUI(filters, scanner, filter_file, filterSettings)
 }
 
 func main() {

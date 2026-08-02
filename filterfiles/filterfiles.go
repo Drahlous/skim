@@ -129,6 +129,85 @@ func CompileFilterRegularExpressions(filterSettings TextAnalysisToolSettings) ([
 	return filters, nil
 }
 
+// filterToXML converts a Filter's live state back into a FilterXML for
+// serialization. It reads from the bool/BackColor fields rather than f.XML
+// directly, since in-session edits (toggling enabled/case-sensitive, regex
+// text changes) update those fields but leave the original parsed f.XML
+// strings untouched.
+func filterToXML(f Filter) FilterXML {
+	enabled := "n"
+	if f.IsEnabled {
+		enabled = "y"
+	}
+	caseSensitive := "n"
+	if f.CaseSensitive {
+		caseSensitive = "y"
+	}
+	// f.XML.Excluding (not a live-tracked bool field on this branch) is
+	// preserved as originally loaded, since skim has no UI for changing it.
+	excluding := f.XML.Excluding
+	if excluding == "" {
+		excluding = "n"
+	}
+
+	regexAttr := f.XML.Regex
+	if regexAttr == "" {
+		regexAttr = "y"
+	}
+	filterType := f.XML.Type
+	if filterType == "" {
+		filterType = "matches_text"
+	}
+
+	return FilterXML{
+		Enabled:       enabled,
+		Excluding:     excluding,
+		Description:   f.XML.Description,
+		BackColor:     strings.ToLower(strings.TrimPrefix(f.BackColor, "#")),
+		Type:          filterType,
+		CaseSensitive: caseSensitive,
+		Regex:         regexAttr,
+		Text:          f.XML.Text,
+	}
+}
+
+// WriteFilterFile serializes filters back to a .tat file at path, the
+// inverse of ReadFilterFile + CompileFilterRegularExpressions. meta supplies
+// the root element's version/showOnlyFilteredLines attributes (normally the
+// TextAnalysisToolSettings the filters were originally loaded from, so a
+// save preserves them); if either is empty, a reasonable default is used so
+// a filter set built entirely from scratch in the UI still produces a valid
+// file.
+func WriteFilterFile(path string, meta TextAnalysisToolSettings, filters []Filter) error {
+	version := meta.Version
+	if version == "" {
+		version = "2023-04-25"
+	}
+	showOnlyFilteredLines := meta.ShowOnlyFilteredLines
+	if showOnlyFilteredLines == "" {
+		showOnlyFilteredLines = "False"
+	}
+
+	settings := TextAnalysisToolSettings{
+		Version:               version,
+		ShowOnlyFilteredLines: showOnlyFilteredLines,
+	}
+	for _, f := range filters {
+		settings.Filters = append(settings.Filters, filterToXML(f))
+	}
+
+	body, err := xml.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	out := []byte(`<?xml version="1.0" encoding="utf-8" standalone="yes"?>` + "\n")
+	out = append(out, body...)
+	out = append(out, '\n')
+
+	return os.WriteFile(path, out, 0o644)
+}
+
 func GetMatchingFilter(filters []Filter, line string) (Filter, bool) {
 	var filter Filter
 	for _, filter := range filters {

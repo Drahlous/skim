@@ -195,6 +195,89 @@ func TestGetMatchingFilter(t *testing.T) {
 	})
 }
 
+func TestWriteFilterFileRoundTrips(t *testing.T) {
+	filters := []Filter{
+		mustFilter(t, "^debug", false, true, "#87CEFA"),
+		mustFilter(t, "goodbye", true, false, "#FF0000"),
+	}
+	meta := TextAnalysisToolSettings{Version: "2023-04-25", ShowOnlyFilteredLines: "True"}
+
+	path := t.TempDir() + "/out.tat"
+	if err := WriteFilterFile(path, meta, filters); err != nil {
+		t.Fatalf("WriteFilterFile returned unexpected error: %v", err)
+	}
+
+	settings, err := ReadFilterFile(path)
+	if err != nil {
+		t.Fatalf("ReadFilterFile on the written file returned unexpected error: %v", err)
+	}
+	if settings.Version != "2023-04-25" {
+		t.Errorf("Version = %q, want %q (preserved from meta)", settings.Version, "2023-04-25")
+	}
+	if settings.ShowOnlyFilteredLines != "True" {
+		t.Errorf("ShowOnlyFilteredLines = %q, want %q (preserved from meta)", settings.ShowOnlyFilteredLines, "True")
+	}
+
+	got, err := CompileFilterRegularExpressions(settings)
+	if err != nil {
+		t.Fatalf("CompileFilterRegularExpressions returned unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d filters, want 2", len(got))
+	}
+	if got[0].XML.Text != "^debug" || !got[0].IsEnabled || got[0].BackColor != "#87CEFA" {
+		t.Errorf("filter[0] round-tripped incorrectly: %+v", got[0])
+	}
+	if got[1].XML.Text != "goodbye" || got[1].IsEnabled || !got[1].CaseSensitive {
+		t.Errorf("filter[1] round-tripped incorrectly (want disabled, case-sensitive): %+v", got[1])
+	}
+}
+
+func TestWriteFilterFileWritesLiveStateNotStaleXML(t *testing.T) {
+	// Simulate a filter loaded from a file, then toggled in the UI: the
+	// bool fields change but the original parsed XML strings do not.
+	f := mustFilter(t, "ERROR", false, false, "#FF0000")
+	f.XML.Enabled = "y" // stale: the original file had this filter enabled
+	f.IsEnabled = false // live state: it was toggled off since
+
+	path := t.TempDir() + "/out.tat"
+	if err := WriteFilterFile(path, TextAnalysisToolSettings{}, []Filter{f}); err != nil {
+		t.Fatalf("WriteFilterFile returned unexpected error: %v", err)
+	}
+
+	settings, err := ReadFilterFile(path)
+	if err != nil {
+		t.Fatalf("ReadFilterFile returned unexpected error: %v", err)
+	}
+	if settings.Filters[0].Enabled != "n" {
+		t.Errorf("written enabled=%q, want %q (live state, not the stale XML)", settings.Filters[0].Enabled, "n")
+	}
+}
+
+func TestWriteFilterFileFillsDefaultsWhenMetaIsEmpty(t *testing.T) {
+	path := t.TempDir() + "/out.tat"
+	if err := WriteFilterFile(path, TextAnalysisToolSettings{}, nil); err != nil {
+		t.Fatalf("WriteFilterFile returned unexpected error: %v", err)
+	}
+
+	settings, err := ReadFilterFile(path)
+	if err != nil {
+		t.Fatalf("ReadFilterFile returned unexpected error: %v", err)
+	}
+	if settings.Version == "" {
+		t.Error("Version is empty, want a default value filled in")
+	}
+	if settings.ShowOnlyFilteredLines == "" {
+		t.Error("ShowOnlyFilteredLines is empty, want a default value filled in")
+	}
+}
+
+func TestWriteFilterFileInvalidPath(t *testing.T) {
+	if err := WriteFilterFile("/nonexistent/dir/out.tat", TextAnalysisToolSettings{}, nil); err == nil {
+		t.Fatal("WriteFilterFile with an unwritable path returned no error")
+	}
+}
+
 func TestGetMatchingLines(t *testing.T) {
 	filters := []Filter{
 		mustFilter(t, "^debug", false, true, "#87CEFA"),

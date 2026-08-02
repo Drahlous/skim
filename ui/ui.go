@@ -77,7 +77,14 @@ func renderStatusLine(m model) string {
 	total := len(m.log.Lines)
 	shown := len(m.log.Table.Rows())
 
-	return fmt.Sprintf("hide unmatched: %s  |  showing %d/%d lines", hideState, shown, total)
+	line := fmt.Sprintf("hide unmatched: %s  |  showing %d/%d lines", hideState, shown, total)
+	if m.filtersDirty {
+		line += "  |  unsaved filter changes"
+	}
+	if m.saveStatus != "" {
+		line += "  |  " + m.saveStatus
+	}
+	return line
 }
 
 // displayKey renders a raw key string (as stored in a keybindings.KeyMap)
@@ -114,6 +121,9 @@ func renderKeyBindings(km keybindings.KeyMap, focus Focus) string {
 		parts = append(parts,
 			fmt.Sprintf("%s: edit regex", strings.Join(km[keybindings.EditRegex], "/")),
 			fmt.Sprintf("%s/%s: move column", strings.Join(km[keybindings.CursorLeft], ","), strings.Join(km[keybindings.CursorRight], ",")),
+			fmt.Sprintf("%s: new filter", strings.Join(km[keybindings.NewFilter], "/")),
+			fmt.Sprintf("%s: delete filter", strings.Join(km[keybindings.DeleteFilter], "/")),
+			fmt.Sprintf("%s/%s: reorder", strings.Join(km[keybindings.MoveFilterUp], ","), strings.Join(km[keybindings.MoveFilterDown], ",")),
 		)
 	case LogFocus:
 		parts = append(parts,
@@ -121,7 +131,10 @@ func renderKeyBindings(km keybindings.KeyMap, focus Focus) string {
 		)
 	}
 
-	parts = append(parts, fmt.Sprintf("%s: keybindings", strings.Join(km[keybindings.OpenKeybindingsScreen], "/")))
+	parts = append(parts,
+		fmt.Sprintf("%s: save filters", strings.Join(km[keybindings.SaveFilters], "/")),
+		fmt.Sprintf("%s: keybindings", strings.Join(km[keybindings.OpenKeybindingsScreen], "/")),
+	)
 
 	return strings.Join(parts, "  |  ")
 }
@@ -178,6 +191,12 @@ type model struct {
 	editingKeybindings bool
 	kbCursor           int  // which action row is selected
 	kbCapturing        bool // waiting for a keypress to bind to the selected action
+
+	// Filter persistence state
+	filterFilePath string                               // where SaveFilters writes to
+	fileMeta       filterfiles.TextAnalysisToolSettings // version/showOnlyFilteredLines to preserve on save
+	filtersDirty   bool                                 // whether filters have changed since the last save
+	saveStatus     string                               // last save attempt's outcome, shown in the status line
 }
 
 var baseStyle = lipgloss.NewStyle().
@@ -201,7 +220,7 @@ func (m model) paneStyle(want Focus) lipgloss.Style {
 }
 
 // Define the initial state for the application
-func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner) model {
+func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFilePath string, fileMeta filterfiles.TextAnalysisToolSettings) model {
 	var lines []string
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
@@ -221,8 +240,10 @@ func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner) model {
 			Lines:  lines,
 			Cursor: 0,
 		},
-		hideUnmatched: true,
-		keyMap:        keyMap,
+		hideUnmatched:  true,
+		keyMap:         keyMap,
+		filterFilePath: filterFilePath,
+		fileMeta:       fileMeta,
 	}
 }
 
@@ -321,6 +342,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keybindings.Toggle:
 			// Toggles the selected state for the item under the cursor
 			view.Toggle()
+			if m.focus == FilterFocus {
+				m.filtersDirty = true
+				m.saveStatus = ""
+			}
 
 		case keybindings.SwitchFocus:
 			m.focus += 1
@@ -340,6 +365,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.editingKeybindings = true
 			m.kbCursor = 0
 			m.kbCapturing = false
+
+		case keybindings.NewFilter:
+			m.filters.Add()
+			m.filtersDirty = true
+			m.saveStatus = ""
+			return m, openRegexEditorCmd(m.filters.Cursor, "")
+
+		case keybindings.DeleteFilter:
+			if len(m.filters.Filters) > 0 {
+				m.filters.Delete()
+				m.filtersDirty = true
+				m.saveStatus = ""
+			}
+
+		case keybindings.MoveFilterUp:
+			m.filters.MoveUp()
+			m.filtersDirty = true
+			m.saveStatus = ""
+
+		case keybindings.MoveFilterDown:
+			m.filters.MoveDown()
+			m.filtersDirty = true
+			m.saveStatus = ""
+
+		case keybindings.SaveFilters:
+			if err := filterfiles.WriteFilterFile(m.filterFilePath, m.fileMeta, m.filters.Filters); err != nil {
+				m.saveStatus = fmt.Sprintf("save failed: %v", err)
+			} else {
+				m.saveStatus = fmt.Sprintf("saved to %s", m.filterFilePath)
+				m.filtersDirty = false
+			}
 		}
 
 	case editorFinishedMsg:
@@ -350,7 +406,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			content, err := os.ReadFile(msg.tempFile)
 			if err == nil {
 				newText := strings.TrimRight(string(content), "\n")
-				m.filters.UpdateRegexText(msg.index, newText)
+				if err := m.filters.UpdateRegexText(msg.index, newText); err == nil {
+					m.filtersDirty = true
+					m.saveStatus = ""
+				}
 			}
 		}
 
@@ -410,8 +469,8 @@ func (m model) View() string {
 }
 
 // Run the program by passing the initial model to tea.NewProgram, then run
-func RunUI(filters []filterfiles.Filter, scanner *bufio.Scanner) {
-	p := tea.NewProgram(initialModel(filters, scanner), tea.WithAltScreen())
+func RunUI(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFilePath string, fileMeta filterfiles.TextAnalysisToolSettings) {
+	p := tea.NewProgram(initialModel(filters, scanner, filterFilePath, fileMeta), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("An error occured: %v", err)
 		os.Exit(1)
