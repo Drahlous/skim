@@ -31,6 +31,7 @@ const (
 	SaveFilters           Action = "save_filters"
 	IncreaseContext       Action = "increase_context"
 	DecreaseContext       Action = "decrease_context"
+	ToggleHelp            Action = "toggle_help"
 )
 
 // Scope limits which focused view an action's keys are considered in.
@@ -76,6 +77,7 @@ var Registry = []Spec{
 	{SaveFilters, ScopeGlobal, "save filters to file", []string{"s"}},
 	{IncreaseContext, ScopeLogView, "show more context around matches", []string{"+"}},
 	{DecreaseContext, ScopeLogView, "show less context around matches", []string{"-"}},
+	{ToggleHelp, ScopeGlobal, "show/hide keybindings help", []string{"?"}},
 }
 
 // SpecFor returns the registry entry for an action.
