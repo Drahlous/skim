@@ -1025,6 +1025,204 @@ func TestViewShowsSearchPromptWhileSearching(t *testing.T) {
 	}
 }
 
+func TestJumpToTopAndBottom(t *testing.T) {
+	m := newTestModel(t, nil, "one\ntwo\nthree\nfour\n")
+	newModel, _ := m.Update(keyMsg("tab")) // LogFocus
+	m = newModel.(model)
+
+	newModel, _ = m.Update(keyMsg("j"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("j"))
+	m = newModel.(model)
+	if m.log.Cursor != 2 {
+		t.Fatalf("precondition: log.Cursor = %d, want 2", m.log.Cursor)
+	}
+
+	newModel, _ = m.Update(keyMsg("g"))
+	m = newModel.(model)
+	if m.log.Cursor != 0 {
+		t.Errorf("log.Cursor after g = %d, want 0", m.log.Cursor)
+	}
+
+	newModel, _ = m.Update(keyMsg("G"))
+	m = newModel.(model)
+	if m.log.Cursor != 3 {
+		t.Errorf("log.Cursor after G = %d, want 3 (last line)", m.log.Cursor)
+	}
+}
+
+func TestJumpToTopBottomNoOpOnEmptyLog(t *testing.T) {
+	m := newTestModel(t, nil, "")
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+
+	newModel, _ = m.Update(keyMsg("G"))
+	m = newModel.(model)
+	if m.log.Cursor != 0 {
+		t.Errorf("log.Cursor after G on empty log = %d, want unchanged 0", m.log.Cursor)
+	}
+}
+
+func TestJumpToLineOpensCapturesAndJumpsOnEnter(t *testing.T) {
+	m := newTestModel(t, nil, "one\ntwo\nthree\nfour\nfive\n")
+	newModel, _ := m.Update(keyMsg("tab")) // LogFocus
+	m = newModel.(model)
+
+	newModel, _ = m.Update(keyMsg(":"))
+	m = newModel.(model)
+	if !m.jumpingToLine {
+		t.Fatal("jumpingToLine = false after :, want true")
+	}
+
+	for _, r := range "3" {
+		newModel, _ = m.Update(keyMsg(string(r)))
+		m = newModel.(model)
+	}
+	if m.jumpLineText != "3" {
+		t.Fatalf("jumpLineText = %q, want %q", m.jumpLineText, "3")
+	}
+
+	newModel, _ = m.Update(keyMsg("enter"))
+	m = newModel.(model)
+
+	if m.jumpingToLine {
+		t.Error("jumpingToLine still true after enter, want false")
+	}
+	if m.log.Cursor != 2 {
+		t.Errorf("log.Cursor after jumping to line 3 = %d, want 2 (0-indexed)", m.log.Cursor)
+	}
+}
+
+func TestJumpToLineClampsOutOfRangeInput(t *testing.T) {
+	m := newTestModel(t, nil, "one\ntwo\nthree\n")
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+
+	newModel, _ = m.Update(keyMsg(":"))
+	m = newModel.(model)
+	for _, r := range "999" {
+		newModel, _ = m.Update(keyMsg(string(r)))
+		m = newModel.(model)
+	}
+	newModel, _ = m.Update(keyMsg("enter"))
+	m = newModel.(model)
+
+	if m.log.Cursor != 2 {
+		t.Errorf("log.Cursor after jumping past the end = %d, want 2 (clamped to last line)", m.log.Cursor)
+	}
+}
+
+func TestJumpToLineEmptyInputJustClosesPrompt(t *testing.T) {
+	m := newTestModel(t, nil, "one\ntwo\n")
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+
+	newModel, _ = m.Update(keyMsg(":"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("enter")) // empty input just closes the prompt
+	m = newModel.(model)
+	if m.jumpingToLine {
+		t.Error("jumpingToLine still true after enter on empty input, want false")
+	}
+	if m.log.Cursor != 0 {
+		t.Errorf("log.Cursor changed to %d after empty-input enter, want unchanged 0", m.log.Cursor)
+	}
+}
+
+func TestJumpToLineIgnoresNonDigitRunes(t *testing.T) {
+	m := newTestModel(t, nil, "one\ntwo\n")
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+
+	newModel, _ = m.Update(keyMsg(":"))
+	m = newModel.(model)
+	for _, r := range "1x2" {
+		newModel, _ = m.Update(keyMsg(string(r)))
+		m = newModel.(model)
+	}
+	if m.jumpLineText != "12" {
+		t.Errorf("jumpLineText = %q, want %q (non-digit rune ignored)", m.jumpLineText, "12")
+	}
+}
+
+func TestJumpToLineBackspaceAndEscCancel(t *testing.T) {
+	m := newTestModel(t, nil, "one\ntwo\n")
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg(":"))
+	m = newModel.(model)
+
+	newModel, _ = m.Update(keyMsg("1"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("2"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("backspace"))
+	m = newModel.(model)
+	if m.jumpLineText != "1" {
+		t.Fatalf("jumpLineText after backspace = %q, want %q", m.jumpLineText, "1")
+	}
+
+	newModel, _ = m.Update(keyMsg("esc"))
+	m = newModel.(model)
+	if m.jumpingToLine {
+		t.Error("jumpingToLine still true after esc, want false")
+	}
+	if m.jumpLineText != "" {
+		t.Errorf("jumpLineText after esc = %q, want empty", m.jumpLineText)
+	}
+	if m.log.Cursor != 0 {
+		t.Errorf("log.Cursor changed to %d after esc cancel, want unchanged 0", m.log.Cursor)
+	}
+}
+
+func TestRenderStatusLineShowsLinePosition(t *testing.T) {
+	m := newTestModel(t, nil, "one\ntwo\nthree\n")
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("tab"))
+	m = newModel.(model)
+	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
+
+	if !strings.Contains(renderStatusLine(m), "line 1/3") {
+		t.Errorf("status line missing initial position, got: %q", renderStatusLine(m))
+	}
+
+	newModel, _ = m.Update(keyMsg("j"))
+	m = newModel.(model)
+	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
+	if !strings.Contains(renderStatusLine(m), "line 2/3") {
+		t.Errorf("status line after moving down = %q, want it to show line 2/3", renderStatusLine(m))
+	}
+}
+
+func TestRenderStatusLineOmitsPositionOnEmptyLog(t *testing.T) {
+	m := newTestModel(t, nil, "")
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = newModel.(model)
+	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
+
+	if strings.Contains(renderStatusLine(m), "line ") {
+		t.Errorf("status line on empty log shows a position indicator, want none: %q", renderStatusLine(m))
+	}
+}
+
+func TestViewShowsJumpLinePromptWhileJumping(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "^debug")}, "debug: hello\nworld\n")
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("tab"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg(":"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("2"))
+	m = newModel.(model)
+
+	out := m.View()
+	if !strings.Contains(out, ":2") {
+		t.Errorf("View() while jumping missing the in-progress line number, got:\n%s", out)
+	}
+}
+
 func TestViewShowsActiveSearchInStatusLine(t *testing.T) {
 	m := newTestModel(t, nil, "hello world\ngoodbye\n")
 	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})

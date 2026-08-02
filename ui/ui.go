@@ -10,6 +10,7 @@ import (
 	"skim/keybindings"
 	filterview "skim/ui/views/filterview"
 	logview "skim/ui/views/logview"
+	"strconv"
 	"strings"
 
 	// We'll shorten the package name to "tea" for ease of use
@@ -79,6 +80,9 @@ func renderStatusLine(m model) string {
 	shown := len(m.log.Table.Rows())
 
 	line := fmt.Sprintf("hide unmatched: %s  |  showing %d/%d lines", hideState, shown, total)
+	if total > 0 {
+		line = fmt.Sprintf("line %d/%d  |  %s", m.log.Cursor+1, total, line)
+	}
 	if m.contextLines > 0 {
 		line += fmt.Sprintf("  |  context: ±%d", m.contextLines)
 	}
@@ -101,6 +105,15 @@ func renderSearchPrompt(m model) string {
 		return fmt.Sprintf("/%s  (invalid regex: %s)", m.searchText, m.searchErr)
 	}
 	return fmt.Sprintf("/%s", m.searchText)
+}
+
+// renderJumpLinePrompt shows the in-progress line number (or its parse
+// error) in place of the help bar while the user is typing after ":".
+func renderJumpLinePrompt(m model) string {
+	if m.jumpLineErr != "" {
+		return fmt.Sprintf(":%s  (%s)", m.jumpLineText, m.jumpLineErr)
+	}
+	return fmt.Sprintf(":%s", m.jumpLineText)
 }
 
 // displayKey renders a raw key string (as stored in a keybindings.KeyMap)
@@ -153,6 +166,8 @@ func renderKeyBindings(km keybindings.KeyMap, focus Focus, width int) string {
 			fmt.Sprintf("%s: search", strings.Join(km[keybindings.Search], "/")),
 			fmt.Sprintf("%s/%s: next/prev match", strings.Join(km[keybindings.SearchNext], ","), strings.Join(km[keybindings.SearchPrev], ",")),
 			fmt.Sprintf("%s/%s: context lines", strings.Join(km[keybindings.IncreaseContext], ","), strings.Join(km[keybindings.DecreaseContext], ",")),
+			fmt.Sprintf("%s/%s: jump top/bottom", strings.Join(km[keybindings.JumpToTop], ","), strings.Join(km[keybindings.JumpToBottom], ",")),
+			fmt.Sprintf("%s: jump to line", strings.Join(km[keybindings.JumpToLine], "/")),
 		)
 	}
 
@@ -265,6 +280,11 @@ type model struct {
 	lastSearch     regexp.Regexp // last successfully compiled search pattern
 	lastSearchText string        // raw text of lastSearch, for display (lastSearch.String() includes the (?i) prefix)
 	hasSearch      bool          // whether lastSearch is valid (n/N have something to jump to)
+
+	// Jump-to-line state
+	jumpingToLine bool   // capturing a 1-indexed line number from the user
+	jumpLineText  string // digits typed so far in the current input session
+	jumpLineErr   string // set if jumpLineText failed to parse as a line number
 
 	// Filter persistence state
 	filterFilePath string                               // where SaveFilters writes to
@@ -418,6 +438,57 @@ func (m model) updateSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateJumpLineInput handles key presses while a target line number is
+// being typed (after pressing ":" in the Log pane): digits are appended to
+// jumpLineText, backspace removes the last one, esc cancels, and enter
+// parses the number and moves the log cursor to it (1-indexed, clamped to
+// the log's bounds).
+func (m model) updateJumpLineInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.jumpingToLine = false
+		m.jumpLineText = ""
+		m.jumpLineErr = ""
+
+	case "enter":
+		if m.jumpLineText == "" {
+			m.jumpingToLine = false
+			break
+		}
+		n, err := strconv.Atoi(m.jumpLineText)
+		if err != nil {
+			m.jumpLineErr = "not a number"
+			break
+		}
+		m.jumpingToLine = false
+		m.jumpLineErr = ""
+		target := n - 1
+		if target < 0 {
+			target = 0
+		}
+		if max := m.log.GetMaxCursor(); target > max {
+			target = max
+		}
+		if target >= 0 {
+			m.log.Cursor = target
+		}
+
+	case "backspace":
+		if len(m.jumpLineText) > 0 {
+			m.jumpLineText = m.jumpLineText[:len(m.jumpLineText)-1]
+		}
+
+	default:
+		for _, r := range msg.Runes {
+			if r >= '0' && r <= '9' {
+				m.jumpLineText += string(r)
+			}
+		}
+	}
+
+	return m, nil
+}
+
 // The Update method is called when "things happen".
 // It updates the model (state) in response to events.
 // Update can also return a Cmd to make more things happen.
@@ -438,6 +509,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.searching {
 			return m.updateSearchInput(msg)
+		}
+
+		if m.jumpingToLine {
+			return m.updateJumpLineInput(msg)
 		}
 
 		var view TableView
@@ -560,6 +635,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case keybindings.ToggleHelp:
 			m.showHelp = !m.showHelp
+
+		case keybindings.JumpToTop:
+			m.log.Cursor = 0
+
+		case keybindings.JumpToBottom:
+			if max := m.log.GetMaxCursor(); max >= 0 {
+				m.log.Cursor = max
+			}
+
+		case keybindings.JumpToLine:
+			m.jumpingToLine = true
+			m.jumpLineText = ""
+			m.jumpLineErr = ""
 		}
 
 	case editorFinishedMsg:
@@ -631,6 +719,8 @@ func (m model) View() string {
 	switch {
 	case m.searching:
 		s += renderSearchPrompt(m) + "\n"
+	case m.jumpingToLine:
+		s += renderJumpLinePrompt(m) + "\n"
 	case m.showHelp:
 		s += renderKeyBindings(m.keyMap, m.focus, m.windowWidth) + "\n"
 	default:
