@@ -19,10 +19,10 @@ go run .
 Pass `-log -` to read the log from stdin instead of a file, so skim can sit at the end of a pipeline instead of only working against something already saved to disk:
 
 ```sh
-kubectl logs -f my-pod | skim -log - -filter path/to/your-filters.tat
+kubectl logs my-pod | skim -log - -filter path/to/your-filters.tat
 ```
 
-skim reads all of stdin up front before the UI opens (the same as it does for a file), so this works with a finite stream (`kubectl logs` without `-f`, `cat`, ...) but won't show lines appended after that point — there's no live-tailing yet. Keyboard input still works normally once the UI is up, piped log or not.
+skim reads all of stdin up front before the UI opens (the same as it does for a file), so this works with a finite stream (`kubectl logs` without `-f`, `cat`, ...) but won't show lines appended after that point — there's no live-tailing yet, and piping in a `-f`/follow stream would leave skim waiting forever for it to end before the UI ever opens. Keyboard input still works normally once the UI is up, piped log or not.
 
 ## The two panes
 

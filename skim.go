@@ -59,7 +59,7 @@ func main() {
 
 	// Parse Command Line Options
 	filter_file := flag.String("filter", "./examples/simple_filter_two.tat", "supply the path to a TAT filter file")
-	log_file := flag.String("log", "./examples/simple_longer.log", "supply the path to the input log file")
+	log_file := flag.String("log", "./examples/simple_longer.log", "supply the path to the input log file, or - to read from stdin")
 	flag.Parse()
 
 	// Run the program
