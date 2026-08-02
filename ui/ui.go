@@ -562,6 +562,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showHelp = !m.showHelp
 		}
 
+	case tea.MouseMsg:
+		// Scrolling while a modal input (keybindings editor or search) is
+		// capturing keystrokes has no sensible target, so ignore it rather
+		// than silently moving a cursor the user can't currently see move.
+		if m.editingKeybindings || m.searching {
+			break
+		}
+
+		var view TableView
+		if m.focus == LogFocus {
+			view = &m.log
+		} else if m.focus == FilterFocus {
+			view = &m.filters
+		}
+
+		switch msg.Type {
+		case tea.MouseWheelUp:
+			view.CursorUp()
+		case tea.MouseWheelDown:
+			view.CursorDown()
+		}
+
 	case editorFinishedMsg:
 		if msg.tempFile != "" {
 			defer os.Remove(msg.tempFile)
@@ -643,7 +665,7 @@ func (m model) View() string {
 
 // Run the program by passing the initial model to tea.NewProgram, then run
 func RunUI(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFilePath string, fileMeta filterfiles.TextAnalysisToolSettings, usingStdinLog bool) {
-	opts := []tea.ProgramOption{tea.WithAltScreen()}
+	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion()}
 	if usingStdinLog {
 		// The log's bufio.Scanner has already fully drained stdin above, so
 		// stdin itself is no longer usable for keyboard input (and may not

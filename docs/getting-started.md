@@ -66,6 +66,8 @@ These work in both panes:
 
 In the **Filters** pane, `left`/`h` and `right`/`l` move the cursor between the enabled checkbox and the case-sensitivity checkbox for the selected filter, and `enter`/`space` toggles whichever one is selected.
 
+The mouse wheel also scrolls the cursor up/down in whichever pane currently has focus.
+
 This is the full default keymap — every action shown here can be rebound. See [keybindings](./keybindings.md).
 
 ## Hiding the noise
