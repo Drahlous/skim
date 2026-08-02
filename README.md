@@ -1,4 +1,4 @@
-# skim
+# skim 🐮
 
 [![Go](https://github.com/Drahlous/skim/actions/workflows/go.yml/badge.svg)](https://github.com/Drahlous/skim/actions/workflows/go.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
