@@ -46,6 +46,7 @@ type Filter struct {
 	Regex         regexp.Regexp
 	IsEnabled     bool
 	CaseSensitive bool
+	Excluding     bool
 	BackColor     string
 }
 
@@ -101,6 +102,7 @@ func makeFilter(XML FilterXML) (Filter, error) {
 		f.IsEnabled = false
 	}
 	f.CaseSensitive = f.XML.CaseSensitive == "y"
+	f.Excluding = f.XML.Excluding == "y"
 
 	regex, err := CompileRegex(XML.Text, f.CaseSensitive)
 	if err != nil {
@@ -133,7 +135,9 @@ func CompileFilterRegularExpressions(filterSettings TextAnalysisToolSettings) ([
 // serialization. It reads from the bool/BackColor fields rather than f.XML
 // directly, since in-session edits (toggling enabled/case-sensitive, regex
 // text changes) update those fields but leave the original parsed f.XML
-// strings untouched.
+// strings untouched. There's no UI action to toggle Excluding, but it's
+// still read from the live bool field for the same reason and for
+// consistency with Enabled/CaseSensitive, rather than the stale XML string.
 func filterToXML(f Filter) FilterXML {
 	enabled := "n"
 	if f.IsEnabled {
@@ -143,11 +147,9 @@ func filterToXML(f Filter) FilterXML {
 	if f.CaseSensitive {
 		caseSensitive = "y"
 	}
-	// f.XML.Excluding (not a live-tracked bool field on this branch) is
-	// preserved as originally loaded, since skim has no UI for changing it.
-	excluding := f.XML.Excluding
-	if excluding == "" {
-		excluding = "n"
+	excluding := "n"
+	if f.Excluding {
+		excluding = "y"
 	}
 
 	regexAttr := f.XML.Regex
@@ -208,12 +210,18 @@ func WriteFilterFile(path string, meta TextAnalysisToolSettings, filters []Filte
 	return os.WriteFile(path, out, 0o644)
 }
 
+// GetMatchingFilter returns the first enabled, non-excluding filter whose
+// regex matches line, for highlighting purposes. Excluding filters are never
+// returned here: they mean "hide this line" rather than "color this line"
+// and are handled separately by IsExcluded, which callers should check
+// first (an excluded line should never be shown, regardless of whether it
+// would also match a highlighting filter).
 func GetMatchingFilter(filters []Filter, line string) (Filter, bool) {
 	var filter Filter
 	for _, filter := range filters {
 
-		// Only continue if this filter is enabled
-		if !filter.IsEnabled {
+		// Only continue if this filter is enabled and not an exclusion filter
+		if !filter.IsEnabled || filter.Excluding {
 			continue
 		}
 
@@ -226,16 +234,35 @@ func GetMatchingFilter(filters []Filter, line string) (Filter, bool) {
 	return filter, false
 }
 
+// IsExcluded reports whether line matches any enabled excluding filter. An
+// excluded line should be hidden unconditionally, regardless of hideUnmatched
+// or whether it would otherwise match a highlighting filter, and regardless
+// of filter order: unlike GetMatchingFilter's first-match-wins highlighting,
+// exclusion is checked against every enabled excluding filter.
+func IsExcluded(filters []Filter, line string) bool {
+	for _, filter := range filters {
+		if !filter.IsEnabled || !filter.Excluding {
+			continue
+		}
+		if filter.Regex.MatchString(line) {
+			return true
+		}
+	}
+	return false
+}
+
 // CountMatches returns, for each filter (by index, matching filters'
 // order), how many lines it is the highlighting match for. This follows the
 // same first-enabled-filter-wins attribution as GetMatchingFilter, so a
 // count reflects exactly the lines that filter is shown coloring, not
-// simply every line its regex happens to match.
+// simply every line its regex happens to match. Excluding filters are
+// skipped, same as GetMatchingFilter: they hide lines, they don't "win"
+// highlighting attribution for them.
 func CountMatches(filters []Filter, lines []string) []int {
 	counts := make([]int, len(filters))
 	for _, line := range lines {
 		for i, filter := range filters {
-			if !filter.IsEnabled {
+			if !filter.IsEnabled || filter.Excluding {
 				continue
 			}
 			if filter.Regex.MatchString(line) {

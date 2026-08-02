@@ -195,6 +195,103 @@ func TestGetMatchingFilter(t *testing.T) {
 	})
 }
 
+func mustExcludingFilter(t *testing.T, text string, enabled bool) Filter {
+	t.Helper()
+	re, err := CompileRegex(text, false)
+	if err != nil {
+		t.Fatalf("CompileRegex(%q) failed: %v", text, err)
+	}
+	return Filter{
+		XML:       FilterXML{Text: text},
+		Regex:     re,
+		IsEnabled: enabled,
+		Excluding: true,
+	}
+}
+
+func TestGetMatchingFilterSkipsExcludingFilters(t *testing.T) {
+	filters := []Filter{
+		mustExcludingFilter(t, "heartbeat", true),
+		mustFilter(t, "heartbeat", false, true, "#87CEFA"),
+	}
+
+	// GetMatchingFilter is for highlighting only; an excluding filter should
+	// never be returned, even if it's the first enabled match in the list.
+	got, ok := GetMatchingFilter(filters, "heartbeat: ok")
+	if !ok {
+		t.Fatal("expected a match, got none")
+	}
+	if got.Excluding {
+		t.Error("GetMatchingFilter returned an excluding filter, want it skipped in favor of the highlighting filter")
+	}
+	if got.BackColor != "#87CEFA" {
+		t.Errorf("got BackColor %q, want %q (the highlighting filter)", got.BackColor, "#87CEFA")
+	}
+}
+
+func TestIsExcluded(t *testing.T) {
+	filters := []Filter{
+		mustFilter(t, "ERROR", false, true, "#FF0000"),
+		mustExcludingFilter(t, "heartbeat", true),
+		mustExcludingFilter(t, "disabled-exclude", false),
+	}
+
+	t.Run("matches an enabled excluding filter", func(t *testing.T) {
+		if !IsExcluded(filters, "heartbeat: ok") {
+			t.Error("expected line to be excluded, got false")
+		}
+	})
+
+	t.Run("disabled excluding filter does not exclude", func(t *testing.T) {
+		if IsExcluded(filters, "disabled-exclude: still here") {
+			t.Error("expected a disabled excluding filter to have no effect, got excluded=true")
+		}
+	})
+
+	t.Run("highlighting filters never exclude", func(t *testing.T) {
+		if IsExcluded(filters, "ERROR: something broke") {
+			t.Error("expected a non-excluding filter match to have no effect on exclusion, got excluded=true")
+		}
+	})
+
+	t.Run("no match", func(t *testing.T) {
+		if IsExcluded(filters, "nothing interesting here") {
+			t.Error("expected no exclusion, got true")
+		}
+	})
+
+	t.Run("empty filter list", func(t *testing.T) {
+		if IsExcluded(nil, "anything") {
+			t.Error("expected no exclusion against an empty filter list")
+		}
+	})
+}
+
+func TestExcludingAttributeParsedFromXML(t *testing.T) {
+	settings := TextAnalysisToolSettings{
+		Filters: []FilterXML{
+			{Enabled: "y", Excluding: "y", BackColor: "000000", Text: "heartbeat"},
+			{Enabled: "y", Excluding: "n", BackColor: "ff0000", Text: "ERROR"},
+			{Enabled: "y", BackColor: "ff0000", Text: "unset-excluding"}, // Excluding left as zero value ""
+		},
+	}
+
+	filters, err := CompileFilterRegularExpressions(settings)
+	if err != nil {
+		t.Fatalf("CompileFilterRegularExpressions returned unexpected error: %v", err)
+	}
+
+	if !filters[0].Excluding {
+		t.Error("filters[0].Excluding = false, want true for excluding=\"y\"")
+	}
+	if filters[1].Excluding {
+		t.Error("filters[1].Excluding = true, want false for excluding=\"n\"")
+	}
+	if filters[2].Excluding {
+		t.Error("filters[2].Excluding = true, want false for an unset excluding attribute")
+	}
+}
+
 func TestWriteFilterFileRoundTrips(t *testing.T) {
 	filters := []Filter{
 		mustFilter(t, "^debug", false, true, "#87CEFA"),
@@ -334,6 +431,26 @@ func TestCountMatchesEmptyInputs(t *testing.T) {
 	filters := []Filter{mustFilter(t, "a", false, true, "#000000")}
 	if got := CountMatches(filters, nil); got[0] != 0 {
 		t.Errorf("CountMatches(filters, nil) = %v, want [0]", got)
+	}
+}
+
+func TestCountMatchesSkipsExcludingFilters(t *testing.T) {
+	// An excluding filter hides its matching lines entirely (see IsExcluded);
+	// it shouldn't also "win" highlighting attribution for them in the
+	// match-count column, which would misleadingly suggest a highlighting
+	// filter is coloring lines that are actually hidden.
+	filters := []Filter{
+		mustExcludingFilter(t, "heartbeat", true),
+		mustFilter(t, "heartbeat", false, true, "#87CEFA"),
+	}
+
+	counts := CountMatches(filters, []string{"heartbeat: ok", "other"})
+
+	if counts[0] != 0 {
+		t.Errorf("counts[0] (excluding filter) = %d, want 0", counts[0])
+	}
+	if counts[1] != 1 {
+		t.Errorf("counts[1] (highlighting filter) = %d, want 1 (attributed the line the excluding filter would otherwise have claimed)", counts[1])
 	}
 }
 

@@ -433,6 +433,28 @@ func TestRenderMovesSelectionWithColumn(t *testing.T) {
 	}
 }
 
+func TestRenderMarksExcludingFilters(t *testing.T) {
+	excluding := mustFilter(t, "heartbeat", false, true, "#000000")
+	excluding.Excluding = true
+
+	v := FilterView{
+		Filters: []filterfiles.Filter{
+			excluding,
+			mustFilter(t, "ERROR", false, true, "#FF0000"),
+		},
+		Cursor: 0,
+	}
+
+	out := v.Render(120, 30, nil)
+
+	if !strings.Contains(out, "! heartbeat") {
+		t.Errorf("expected the excluding filter's regex to be marked with \"! \", got:\n%s", out)
+	}
+	if strings.Contains(out, "! ERROR") {
+		t.Errorf("non-excluding filter should not be marked, got:\n%s", out)
+	}
+}
+
 func TestRenderShowsMatchCounts(t *testing.T) {
 	v := FilterView{
 		Filters: []filterfiles.Filter{
