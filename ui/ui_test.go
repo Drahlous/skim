@@ -1198,6 +1198,46 @@ func TestViewDoesNotPanic(t *testing.T) {
 	}
 }
 
+// TestViewTotalHeightStaysWithinWindowWhenHelpExpands guards against a bug
+// where expanding the keybindings help bar (which can wrap onto more than
+// one line) grew the total rendered frame past windowHeight. Once that
+// happens, Bubble Tea has to drop/shift lines it can't scroll back to fix,
+// which desyncs its line-by-line redraw and can leave stale footer text
+// stuck on screen even after toggling help back off (the collapsed hint
+// line is always exactly one line, so the regression only shows up while
+// expanded).
+func TestViewTotalHeightStaysWithinWindowWhenHelpExpands(t *testing.T) {
+	// Bubble Tea's own renderer splits View()'s output on "\n" and, if that
+	// yields more elements than the terminal's height, drops lines from the
+	// top since it can't navigate into scrollback -- so the relevant line
+	// count is len(strings.Split(out, "\n")), not strings.Count(out, "\n").
+	numLines := func(out string) int { return len(strings.Split(out, "\n")) }
+
+	filters := []filterfiles.Filter{
+		mustFilter(t, "^debug"),
+		mustFilter(t, "goodbye"),
+		mustFilter(t, "Hello"),
+	}
+	lines := "Hello World!\ndebug: this is a debug message\ngoodbye is what I would say here, if the file was over\ndebug: another debug message here\ndebug: getting ready to end the file\ngoodbye world!\n"
+	m := newTestModel(t, filters, lines)
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 165, Height: 40})
+	m = newModel.(model)
+
+	collapsedLines := numLines(m.View())
+
+	newModel, _ = m.Update(keyMsg("?"))
+	m = newModel.(model)
+	if !m.showHelp {
+		t.Fatalf("precondition: showHelp = false after \"?\", want true")
+	}
+	expandedOut := m.View()
+	expandedLines := numLines(expandedOut)
+
+	if expandedLines > m.windowHeight {
+		t.Errorf("expanded View() has %d lines, exceeds windowHeight %d (collapsed had %d)", expandedLines, m.windowHeight, collapsedLines)
+	}
+}
+
 func TestViewShowsSearchPromptWhileSearching(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "^debug")}, "debug: hello\nworld\n")
 	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})

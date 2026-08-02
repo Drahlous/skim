@@ -817,27 +817,40 @@ func (m model) View() string {
 		return m.renderKeybindingsScreen()
 	}
 
+	var footer string
+	switch {
+	case m.searching:
+		footer = renderSearchPrompt(m)
+	case m.jumpingToLine:
+		footer = renderJumpLinePrompt(m)
+	case m.showHelp:
+		footer = renderKeyBindings(m.keyMap, m.focus, m.windowWidth)
+	default:
+		footer = renderHelpHint(m.keyMap)
+	}
+
+	// logview's height budget (see its "-12" offset) assumes a single-line
+	// footer. When the footer wraps onto more lines than that -- e.g. the
+	// expanded keybindings help bar on a narrower terminal -- account for
+	// the extra lines here so the total rendered height doesn't grow past
+	// what it budgeted for. Otherwise the total frame can exceed the
+	// terminal's height, which forces Bubble Tea to drop/shift lines it
+	// can't scroll back to fix, permanently desyncing its line-by-line
+	// redraw (e.g. leaving stale footer text on screen after toggling "?").
+	footerExtraLines := strings.Count(footer, "\n")
+	tableHeight := m.windowHeight - footerExtraLines
+
 	s := ""
 
 	// Make table of filtered log lines
-	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
+	m.log.MakeTable(m.windowWidth, tableHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
 	s += m.paneStyle(LogFocus).Render(m.log.Table.View()) + "\n"
 
 	counts := m.log.MatchCounts(m.filters.Filters)
-	s += m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, m.windowHeight, counts)) + "\n"
+	s += m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, tableHeight, counts)) + "\n"
 
 	s += renderStatusLine(m) + "\n"
-
-	switch {
-	case m.searching:
-		s += renderSearchPrompt(m) + "\n"
-	case m.jumpingToLine:
-		s += renderJumpLinePrompt(m) + "\n"
-	case m.showHelp:
-		s += renderKeyBindings(m.keyMap, m.focus, m.windowWidth) + "\n"
-	default:
-		s += renderHelpHint(m.keyMap) + "\n"
-	}
+	s += footer + "\n"
 
 	// Send the UI for rendering
 	return s
