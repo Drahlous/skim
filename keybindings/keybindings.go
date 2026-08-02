@@ -26,6 +26,8 @@ const (
 	MoveFilterUp          Action = "move_filter_up"
 	MoveFilterDown        Action = "move_filter_down"
 	SaveFilters           Action = "save_filters"
+	IncreaseContext       Action = "increase_context"
+	DecreaseContext       Action = "decrease_context"
 )
 
 // Scope limits which focused view an action's keys are considered in.
@@ -66,6 +68,8 @@ var Registry = []Spec{
 	{MoveFilterUp, ScopeFilterView, "move filter up", []string{"["}},
 	{MoveFilterDown, ScopeFilterView, "move filter down", []string{"]"}},
 	{SaveFilters, ScopeGlobal, "save filters to file", []string{"s"}},
+	{IncreaseContext, ScopeLogView, "show more context around matches", []string{"+"}},
+	{DecreaseContext, ScopeLogView, "show less context around matches", []string{"-"}},
 }
 
 // SpecFor returns the registry entry for an action.

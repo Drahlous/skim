@@ -175,7 +175,7 @@ func TestRenderStatusLine(t *testing.T) {
 		if !m.hideUnmatched {
 			t.Fatal("precondition: hideUnmatched should start true")
 		}
-		m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched)
+		m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
 		out := renderStatusLine(m)
 
 		if !strings.Contains(out, "hide unmatched: ON") {
@@ -188,7 +188,7 @@ func TestRenderStatusLine(t *testing.T) {
 
 	t.Run("hide unmatched off", func(t *testing.T) {
 		m.hideUnmatched = false
-		m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched)
+		m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
 		out := renderStatusLine(m)
 
 		if !strings.Contains(out, "hide unmatched: OFF") {
@@ -683,7 +683,7 @@ func TestRenderStatusLineShowsDirtyAndSaveStatus(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line one\n")
 	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = newModel.(model)
-	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched)
+	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
 
 	if strings.Contains(renderStatusLine(m), "unsaved") {
 		t.Error("status line shows unsaved changes before any edit, want clean state")
@@ -698,6 +698,88 @@ func TestRenderStatusLineShowsDirtyAndSaveStatus(t *testing.T) {
 	out := renderStatusLine(m)
 	if !strings.Contains(out, "saved to /tmp/x.tat") {
 		t.Errorf("status line missing save status, got: %q", out)
+	}
+}
+
+func TestUpdateContextLinesIncreaseDecrease(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+	newModel, _ := m.Update(keyMsg("tab")) // LogFocus
+	m = newModel.(model)
+
+	if m.contextLines != 0 {
+		t.Fatalf("precondition: contextLines = %d, want 0", m.contextLines)
+	}
+
+	newModel, _ = m.Update(keyMsg("+"))
+	m = newModel.(model)
+	if m.contextLines != 1 {
+		t.Errorf("contextLines after + = %d, want 1", m.contextLines)
+	}
+
+	newModel, _ = m.Update(keyMsg("+"))
+	m = newModel.(model)
+	if m.contextLines != 2 {
+		t.Errorf("contextLines after second + = %d, want 2", m.contextLines)
+	}
+
+	newModel, _ = m.Update(keyMsg("-"))
+	m = newModel.(model)
+	if m.contextLines != 1 {
+		t.Errorf("contextLines after - = %d, want 1", m.contextLines)
+	}
+}
+
+func TestUpdateContextLinesDoesNotGoNegative(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+
+	newModel, _ = m.Update(keyMsg("-"))
+	m = newModel.(model)
+	if m.contextLines != 0 {
+		t.Errorf("contextLines after - at zero = %d, want unchanged 0", m.contextLines)
+	}
+}
+
+func TestRenderStatusLineShowsContext(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line one\n")
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = newModel.(model)
+	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
+
+	if strings.Contains(renderStatusLine(m), "context:") {
+		t.Error("status line shows a context indicator at the default of 0, want none")
+	}
+
+	m.contextLines = 2
+	if !strings.Contains(renderStatusLine(m), "context: ±2") {
+		t.Errorf("status line missing context indicator, got: %q", renderStatusLine(m))
+	}
+}
+
+func TestViewShowsFilterMatchCounts(t *testing.T) {
+	// Comparing against a bare "2" would be meaningless: the log pane's own
+	// line-number column will contain that digit regardless of whether
+	// match counts are wired up at all. Instead, render the filter pane
+	// directly with the real computed counts and check View()'s output
+	// contains that exact rendering, so this actually verifies View() wires
+	// filterfiles.CountMatches through to filters.Render.
+	filters := []filterfiles.Filter{mustFilter(t, "^debug")}
+	m := newTestModel(t, filters, "debug: one\ndebug: two\nother\n")
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = newModel.(model)
+
+	counts := filterfiles.CountMatches(m.filters.Filters, m.log.Lines)
+	if counts[0] != 2 {
+		t.Fatalf("precondition: CountMatches = %v, want [2]", counts)
+	}
+	// View() wraps the rendered pane in a bordered paneStyle box, so wrap
+	// the expected value the same way rather than comparing raw content.
+	wantFilterPane := m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, m.windowHeight, counts))
+
+	out := m.View()
+	if !strings.Contains(out, wantFilterPane) {
+		t.Errorf("View() output does not contain the filter pane rendered with real match counts")
 	}
 }
 

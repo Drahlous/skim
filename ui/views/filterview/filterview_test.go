@@ -394,7 +394,7 @@ func TestRenderShowsSelectedColumnAsBraces(t *testing.T) {
 		Column: EnabledColumn,
 	}
 
-	out := v.Render(120, 30)
+	out := v.Render(120, 30, nil)
 
 	if !strings.Contains(out, "{x}") {
 		t.Errorf("expected selected enabled checkbox to render as {x}, got:\n%s", out)
@@ -417,7 +417,7 @@ func TestRenderMovesSelectionWithColumn(t *testing.T) {
 		Column:  CaseSensitiveColumn,
 	}
 
-	out := v.Render(120, 30)
+	out := v.Render(120, 30, nil)
 
 	lines := strings.Split(out, "\n")
 	if len(lines) < 2 {
@@ -433,6 +433,45 @@ func TestRenderMovesSelectionWithColumn(t *testing.T) {
 	}
 }
 
+func TestRenderShowsMatchCounts(t *testing.T) {
+	v := FilterView{
+		Filters: []filterfiles.Filter{
+			mustFilter(t, "^debug", false, true, "#87CEFA"),
+			mustFilter(t, "goodbye", false, true, "#FF0000"),
+		},
+	}
+
+	out := v.Render(120, 30, []int{214, 3})
+
+	lines := strings.Split(out, "\n")
+	if len(lines) < 3 {
+		t.Fatalf("expected a header and two rows, got %d lines", len(lines))
+	}
+	if !strings.Contains(lines[1], "214") {
+		t.Errorf("row 0 missing its match count, got: %q", lines[1])
+	}
+	if !strings.Contains(lines[2], "3") {
+		t.Errorf("row 1 missing its match count, got: %q", lines[2])
+	}
+}
+
+func TestRenderMatchCountsDefaultToZeroWhenMissing(t *testing.T) {
+	v := FilterView{
+		Filters: []filterfiles.Filter{mustFilter(t, "a", false, true, "#000000")},
+	}
+
+	// nil and short counts slices should both be handled without panicking.
+	out := v.Render(120, 30, nil)
+	if !strings.Contains(out, "0") {
+		t.Errorf("expected a zero count with nil counts, got: %q", out)
+	}
+
+	out = v.Render(120, 30, []int{})
+	if !strings.Contains(out, "0") {
+		t.Errorf("expected a zero count with an empty counts slice, got: %q", out)
+	}
+}
+
 func TestRenderScrollsToKeepCursorVisible(t *testing.T) {
 	var filters []filterfiles.Filter
 	for i := 0; i < 10; i++ {
@@ -440,7 +479,7 @@ func TestRenderScrollsToKeepCursorVisible(t *testing.T) {
 	}
 	v := FilterView{Filters: filters, Cursor: 9}
 
-	out := v.Render(80, 30)
+	out := v.Render(80, 30, nil)
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 
 	// header + visibleHeight rows

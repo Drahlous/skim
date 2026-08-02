@@ -226,6 +226,27 @@ func GetMatchingFilter(filters []Filter, line string) (Filter, bool) {
 	return filter, false
 }
 
+// CountMatches returns, for each filter (by index, matching filters'
+// order), how many lines it is the highlighting match for. This follows the
+// same first-enabled-filter-wins attribution as GetMatchingFilter, so a
+// count reflects exactly the lines that filter is shown coloring, not
+// simply every line its regex happens to match.
+func CountMatches(filters []Filter, lines []string) []int {
+	counts := make([]int, len(filters))
+	for _, line := range lines {
+		for i, filter := range filters {
+			if !filter.IsEnabled {
+				continue
+			}
+			if filter.Regex.MatchString(line) {
+				counts[i]++
+				break
+			}
+		}
+	}
+	return counts
+}
+
 func GetMatchingLines(filters []Filter, scanner *bufio.Scanner) {
 
 	// Read line-by-line

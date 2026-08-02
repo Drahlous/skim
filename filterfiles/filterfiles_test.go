@@ -278,6 +278,65 @@ func TestWriteFilterFileInvalidPath(t *testing.T) {
 	}
 }
 
+func TestCountMatches(t *testing.T) {
+	filters := []Filter{
+		mustFilter(t, "^debug", false, true, "#87CEFA"),
+		mustFilter(t, "goodbye", false, true, "#FF0000"),
+		mustFilter(t, "goodbye", false, false, "#000000"), // disabled duplicate, should never count
+	}
+	lines := []string{
+		"debug: one",
+		"goodbye world",
+		"debug: two",
+		"nothing interesting",
+		"goodbye again",
+	}
+
+	counts := CountMatches(filters, lines)
+
+	if len(counts) != 3 {
+		t.Fatalf("got %d counts, want 3 (one per filter)", len(counts))
+	}
+	if counts[0] != 2 {
+		t.Errorf("counts[0] (^debug) = %d, want 2", counts[0])
+	}
+	if counts[1] != 2 {
+		t.Errorf("counts[1] (goodbye) = %d, want 2", counts[1])
+	}
+	if counts[2] != 0 {
+		t.Errorf("counts[2] (disabled duplicate) = %d, want 0", counts[2])
+	}
+}
+
+func TestCountMatchesFirstEnabledFilterWinsAttribution(t *testing.T) {
+	// Both filters match "goodbye world", but CountMatches should attribute
+	// it only to the first enabled filter, matching GetMatchingFilter's
+	// highlighting semantics rather than counting every regex match.
+	filters := []Filter{
+		mustFilter(t, "goodbye", false, true, "#FF0000"),
+		mustFilter(t, "world", false, true, "#00FF00"),
+	}
+
+	counts := CountMatches(filters, []string{"goodbye world"})
+
+	if counts[0] != 1 {
+		t.Errorf("counts[0] = %d, want 1", counts[0])
+	}
+	if counts[1] != 0 {
+		t.Errorf("counts[1] = %d, want 0 (line already attributed to filter 0)", counts[1])
+	}
+}
+
+func TestCountMatchesEmptyInputs(t *testing.T) {
+	if got := CountMatches(nil, []string{"a", "b"}); len(got) != 0 {
+		t.Errorf("CountMatches(nil, ...) = %v, want empty", got)
+	}
+	filters := []Filter{mustFilter(t, "a", false, true, "#000000")}
+	if got := CountMatches(filters, nil); got[0] != 0 {
+		t.Errorf("CountMatches(filters, nil) = %v, want [0]", got)
+	}
+}
+
 func TestGetMatchingLines(t *testing.T) {
 	filters := []Filter{
 		mustFilter(t, "^debug", false, true, "#87CEFA"),

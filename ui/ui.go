@@ -78,6 +78,9 @@ func renderStatusLine(m model) string {
 	shown := len(m.log.Table.Rows())
 
 	line := fmt.Sprintf("hide unmatched: %s  |  showing %d/%d lines", hideState, shown, total)
+	if m.contextLines > 0 {
+		line += fmt.Sprintf("  |  context: ±%d", m.contextLines)
+	}
 	if m.filtersDirty {
 		line += "  |  unsaved filter changes"
 	}
@@ -128,6 +131,7 @@ func renderKeyBindings(km keybindings.KeyMap, focus Focus) string {
 	case LogFocus:
 		parts = append(parts,
 			fmt.Sprintf("%s: hide unmatched", strings.Join(km[keybindings.ToggleHideUnmatched], "/")),
+			fmt.Sprintf("%s/%s: context lines", strings.Join(km[keybindings.IncreaseContext], ","), strings.Join(km[keybindings.DecreaseContext], ",")),
 		)
 	}
 
@@ -185,6 +189,7 @@ type model struct {
 	windowWidth   int
 	windowHeight  int
 	hideUnmatched bool // whether lines are displayed that do not match an active filter
+	contextLines  int  // how many lines of context to show around a match when hideUnmatched is on
 	keyMap        keybindings.KeyMap
 
 	// Keybindings editor screen state
@@ -400,6 +405,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.saveStatus = fmt.Sprintf("saved to %s", m.filterFilePath)
 				m.filtersDirty = false
 			}
+
+		case keybindings.IncreaseContext:
+			m.contextLines++
+
+		case keybindings.DecreaseContext:
+			if m.contextLines > 0 {
+				m.contextLines--
+			}
 		}
 
 	case editorFinishedMsg:
@@ -460,10 +473,11 @@ func (m model) View() string {
 	s := ""
 
 	// Make table of filtered log lines
-	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched)
+	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
 	s += m.paneStyle(LogFocus).Render(m.log.Table.View()) + "\n"
 
-	s += m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, m.windowHeight)) + "\n"
+	counts := filterfiles.CountMatches(m.filters.Filters, m.log.Lines)
+	s += m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, m.windowHeight, counts)) + "\n"
 
 	s += renderStatusLine(m) + "\n"
 	s += renderKeyBindings(m.keyMap, m.focus) + "\n"
@@ -473,8 +487,17 @@ func (m model) View() string {
 }
 
 // Run the program by passing the initial model to tea.NewProgram, then run
-func RunUI(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFilePath string, fileMeta filterfiles.TextAnalysisToolSettings) {
-	p := tea.NewProgram(initialModel(filters, scanner, filterFilePath, fileMeta), tea.WithAltScreen())
+func RunUI(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFilePath string, fileMeta filterfiles.TextAnalysisToolSettings, usingStdinLog bool) {
+	opts := []tea.ProgramOption{tea.WithAltScreen()}
+	if usingStdinLog {
+		// The log's bufio.Scanner has already fully drained stdin above, so
+		// stdin itself is no longer usable for keyboard input (and may not
+		// have been a terminal in the first place). Read keypresses from the
+		// controlling TTY instead.
+		opts = append(opts, tea.WithInputTTY())
+	}
+
+	p := tea.NewProgram(initialModel(filters, scanner, filterFilePath, fileMeta), opts...)
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("An error occured: %v", err)
 		os.Exit(1)
