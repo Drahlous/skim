@@ -14,6 +14,7 @@ type filterColumn int
 const (
 	EnabledColumn       filterColumn = iota // the enabled checkbox
 	CaseSensitiveColumn                     // the case-sensitivity checkbox
+	ExcludingColumn                         // the excluding checkbox
 	maxFilterColumn                         // unused, represents the total number of columns
 )
 
@@ -43,6 +44,8 @@ func (v *FilterView) Toggle() {
 		if regex, err := filterfiles.CompileRegex(filter.XML.Text, filter.CaseSensitive); err == nil {
 			filter.Regex = regex
 		}
+	case ExcludingColumn:
+		filter.Excluding = !filter.Excluding
 	}
 }
 
@@ -76,24 +79,6 @@ func (v *FilterView) CursorRight() int {
 
 func (v *FilterView) GetMaxCursor() int {
 	return len(v.Filters) - 1
-}
-
-// UpdateRegexText replaces the regex text of the filter at index, recompiling
-// its regexp. If the new text fails to compile, the filter is left unchanged
-// and the compile error is returned.
-func (v *FilterView) UpdateRegexText(index int, text string) error {
-	if index < 0 || index >= len(v.Filters) {
-		return fmt.Errorf("filter index %d out of range", index)
-	}
-
-	regex, err := filterfiles.CompileRegex(text, v.Filters[index].CaseSensitive)
-	if err != nil {
-		return err
-	}
-
-	v.Filters[index].XML.Text = text
-	v.Filters[index].Regex = regex
-	return nil
 }
 
 // defaultFilterColor is the background color given to a filter created with
@@ -192,12 +177,33 @@ func cell(content string, width int) string {
 	return lipgloss.NewStyle().Width(width).MaxWidth(width).Inline(true).Render(content)
 }
 
+// checkboxCell renders a single checkbox cell: bracketed normally, or braced
+// and highlighted pink (matching selectedCellStyle) when it's the
+// row/column currently under the cursor -- so the highlight always matches
+// the cell that enter/space would toggle.
+func checkboxCell(checked bool, selected bool) string {
+	mark := " "
+	if checked {
+		mark = "x"
+	}
+	open, close := "[", "]"
+	if selected {
+		open, close = "{", "}"
+	}
+	text := open + mark + close
+	if selected {
+		return selectedCellStyle.Render(text)
+	}
+	return text
+}
+
 // Render draws the filters table: a header row plus one row per filter,
-// each with an enabled checkbox, a live match count, the regex text
-// (colored by the filter's BackColor), and a case-sensitivity checkbox. The
-// row/column under the cursor is marked with braces instead of brackets,
-// and highlighted pink via selectedCellStyle, so the highlight always
-// matches the cell that enter/space would toggle.
+// each with an enabled checkbox, a live match count, the filter's
+// description, its regex text (colored by the filter's BackColor), and
+// case-sensitivity/excluding checkboxes. The row/column under the cursor is
+// marked with braces instead of brackets, and highlighted pink via
+// selectedCellStyle, so the highlight always matches the cell that
+// enter/space would toggle.
 //
 // counts holds each filter's current match count, indexed the same as
 // v.Filters (see filterfiles.CountMatches); a short or nil counts is
@@ -205,16 +211,20 @@ func cell(content string, width int) string {
 func (v *FilterView) Render(windowWidth int, windowHeight int, counts []int) string {
 	enabledWidth := 3
 	countWidth := 6
+	descWidth := 20
 	caseWidth := 4
-	regexWidth := windowWidth - 16 - countWidth - 1 // TODO: Avoid hardcoding this offset
+	exclWidth := 4
+	regexWidth := windowWidth - 16 - countWidth - 1 - descWidth - 1 - exclWidth - 1 // TODO: Avoid hardcoding this offset
 
 	var b strings.Builder
 
 	header := lipgloss.JoinHorizontal(lipgloss.Left,
 		cell("", enabledWidth), " ",
 		headerStyle.Render(cell("#", countWidth)), " ",
+		headerStyle.Render(cell("Description", descWidth)), " ",
 		headerStyle.Render(cell("Regex", regexWidth)), " ",
-		headerStyle.Render(cell("Aa", caseWidth)),
+		headerStyle.Render(cell("Aa", caseWidth)), " ",
+		headerStyle.Render(cell("Excl", exclWidth)),
 	)
 	b.WriteString(header)
 	b.WriteString("\n")
@@ -231,46 +241,15 @@ func (v *FilterView) Render(windowWidth int, windowHeight int, counts []int) str
 	for i := start; i < end; i++ {
 		filter := v.Filters[i]
 
-		checked := " " // not selected
-		if filter.IsEnabled {
-			checked = "x" // this item is selected
-		}
-		// Use braces instead of brackets to mark the column selected via
-		// left/right (h/l) navigation, on the row under the cursor.
-		open, close := "[", "]"
-		if i == v.Cursor && v.Column == EnabledColumn {
-			open, close = "{", "}"
-		}
-		enabledCell := fmt.Sprintf("%s%s%s", open, checked, close)
-		if i == v.Cursor && v.Column == EnabledColumn {
-			enabledCell = selectedCellStyle.Render(enabledCell)
-		}
+		enabledCell := checkboxCell(filter.IsEnabled, i == v.Cursor && v.Column == EnabledColumn)
+		caseCell := checkboxCell(filter.CaseSensitive, i == v.Cursor && v.Column == CaseSensitiveColumn)
+		exclCell := checkboxCell(filter.Excluding, i == v.Cursor && v.Column == ExcludingColumn)
 
-		caseChecked := " "
-		if filter.CaseSensitive {
-			caseChecked = "x"
-		}
-		open, close = "[", "]"
-		if i == v.Cursor && v.Column == CaseSensitiveColumn {
-			open, close = "{", "}"
-		}
-		caseCell := fmt.Sprintf("%s%s%s", open, caseChecked, close)
-		if i == v.Cursor && v.Column == CaseSensitiveColumn {
-			caseCell = selectedCellStyle.Render(caseCell)
-		}
-
-		// Excluding filters hide matching lines rather than highlighting
-		// them, which would otherwise look identical to a highlighting
-		// filter that simply never matches anything; mark them so that
-		// isn't a silent mystery.
-		text := filter.XML.Text
-		if filter.Excluding {
-			text = "! " + text
-		}
+		descCell := cell(filter.XML.Description, descWidth)
 
 		style := filterStyle
 		style.Background(lipgloss.Color(filter.BackColor))
-		regexCell := style.Render(cell(text, regexWidth))
+		regexCell := style.Render(cell(filter.XML.Text, regexWidth))
 
 		count := 0
 		if i < len(counts) {
@@ -281,8 +260,10 @@ func (v *FilterView) Render(windowWidth int, windowHeight int, counts []int) str
 		row := lipgloss.JoinHorizontal(lipgloss.Left,
 			cell(enabledCell, enabledWidth), " ",
 			countCell, " ",
+			descCell, " ",
 			regexCell, " ",
-			cell(caseCell, caseWidth),
+			cell(caseCell, caseWidth), " ",
+			cell(exclCell, exclWidth),
 		)
 		b.WriteString(row)
 		b.WriteString("\n")

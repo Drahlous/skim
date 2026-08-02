@@ -133,11 +133,9 @@ func CompileFilterRegularExpressions(filterSettings TextAnalysisToolSettings) ([
 
 // filterToXML converts a Filter's live state back into a FilterXML for
 // serialization. It reads from the bool/BackColor fields rather than f.XML
-// directly, since in-session edits (toggling enabled/case-sensitive, regex
-// text changes) update those fields but leave the original parsed f.XML
-// strings untouched. There's no UI action to toggle Excluding, but it's
-// still read from the live bool field for the same reason and for
-// consistency with Enabled/CaseSensitive, rather than the stale XML string.
+// directly, since in-session edits (toggling enabled/case-sensitive/excluding,
+// regex text and description changes, picking a color) update those fields
+// but leave the original parsed f.XML strings untouched.
 func filterToXML(f Filter) FilterXML {
 	enabled := "n"
 	if f.IsEnabled {

@@ -29,23 +29,23 @@ skim reads all of stdin up front before the UI opens (the same as it does for a 
 skim's screen is split into two panes, plus a status line and a help bar at the bottom:
 
 ```
-┌─────────────────────────────────────────────┐
-│  #     Line                                  │   <- Log pane
-│  1     Hello World!                          │
-│  2     debug: this is a debug message        │
-│  ...                                          │
-└─────────────────────────────────────────────┘
-┌─────────────────────────────────────────────┐
-│      #      Regex                     Aa     │   <- Filters pane
-│  [x]  1     ^debug                    [ ]     │
-│  [x]  1     goodbye                   [ ]     │
-└─────────────────────────────────────────────┘
+┌────────────────────────────────────────┐
+│  #     Line                            │   <- Log pane
+│  1     Hello World!                    │
+│  2     debug: this is a debug message  │
+│  ...                                   │
+└────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│       #   Description        Regex          Aa    Excl  │   <- Filters pane
+│  [x]  1                      ^debug         [ ]   [ ]   │
+│  [x]  1                      goodbye        [ ]   [ ]   │
+└─────────────────────────────────────────────────────────┘
 hide unmatched: ON  |  showing 4/6 lines
 q: quit  h: hide unmatched  K: keybindings
 ```
 
 - **Log pane** (top) — every line of the log file, numbered, colored by whichever filter matched it.
-- **Filters pane** (bottom) — one row per filter from your `.tat` file: an enabled checkbox, a live match count, the regex text (colored with that filter's own background color), and a case-sensitivity checkbox.
+- **Filters pane** (bottom) — one row per filter from your `.tat` file: an enabled checkbox, a live match count, the filter's description, its regex text (colored with that filter's own background color), and case-sensitivity/excluding checkboxes.
 
 The pane with keyboard focus is outlined in a highlighted border (pink by default). Press `tab` to switch focus between them.
 
@@ -64,7 +64,7 @@ These work in both panes:
 | `tab` | switch focus between Log and Filters |
 | `q` / `ctrl+c` | quit |
 
-In the **Filters** pane, `left`/`h` and `right`/`l` move the cursor between the enabled checkbox and the case-sensitivity checkbox for the selected filter, and `enter`/`space` toggles whichever one is selected.
+In the **Filters** pane, `left`/`h` and `right`/`l` move the cursor between the enabled, case-sensitivity, and excluding checkboxes for the selected filter, and `enter`/`space` toggles whichever one is selected.
 
 The mouse wheel also scrolls the cursor up/down in whichever pane currently has focus.
 
@@ -93,9 +93,17 @@ Hiding unmatched lines is powerful but throws away sequence — you see the line
 
 The Filters pane's `#` column shows each filter's current match count — how many lines it's the one coloring, following the same first-enabled-filter-wins rule as highlighting (see [filter files](./filter-files.md#file-structure)). It updates live as you toggle filters, edit regexes, or the underlying counts otherwise change, and is a quick way to spot which filter is dominating a log before you've scrolled through it.
 
-## Editing a filter's regex live
+## Editing a filter live
 
-With the **Filters** pane focused, move the cursor to a filter row and press `i` to open that filter's regex text in `$EDITOR` (falls back to `vi` if unset). Save and quit the editor, and skim recompiles the regex and re-renders the log immediately — no restart needed.
+With the **Filters** pane focused, move the cursor to a filter row and press `i` to open the filter editor. It's a form with one row per field — description, regex, case sensitivity, exclusion, enabled, and color:
+
+- `up`/`k` and `down`/`j` move between fields.
+- `enter` on **Description** or **Regex** starts typing; `enter` again confirms (recompiling the regex immediately — an invalid pattern stays in edit mode with the compile error shown instead of being discarded), `esc` discards just that field's in-progress edit. `ctrl+e` drops into `$EDITOR` with the field's current text, for anything long enough that a full editor is more comfortable than a single terminal line — press it right on the row without going through `enter` first, or mid-edit to switch over without losing what you've typed; either way, the result is applied the same way as `enter` on return.
+- `enter`/`space` on **Case sensitive**, **Excluding**, or **Enabled** toggles it immediately.
+- `enter` on **Color** opens a color picker: a grid of swatches you can move through with the arrow keys (or `hjkl`), click directly with the mouse, or press `c` to type an exact `#RRGGBB` hex value. `enter` or a click applies the color and returns to the form; `esc` backs out without changing it.
+- `esc` from the field list closes the editor. Each field applies as soon as you confirm it, so there's no separate "save" step for the form itself — closing it just stops offering more fields to edit.
+
+Pressing `a` inserts a new, disabled filter after the cursor and opens the same editor for it.
 
 This is the fastest way to iterate when you don't yet know the exact pattern you're looking for: tweak the regex, look at what now matches, tweak again.
 

@@ -21,7 +21,7 @@ func keyMsg(key string) tea.KeyMsg {
 	special := map[string]tea.KeyType{
 		"up": tea.KeyUp, "down": tea.KeyDown, "left": tea.KeyLeft, "right": tea.KeyRight,
 		"enter": tea.KeyEnter, "tab": tea.KeyTab, "esc": tea.KeyEsc, "escape": tea.KeyEscape,
-		"ctrl+c": tea.KeyCtrlC, " ": tea.KeySpace,
+		"ctrl+c": tea.KeyCtrlC, "ctrl+e": tea.KeyCtrlE, " ": tea.KeySpace,
 	}
 	if t, ok := special[key]; ok {
 		return tea.KeyMsg{Type: t}
@@ -139,7 +139,7 @@ func TestRenderKeyBindings(t *testing.T) {
 	t.Run("filter focus", func(t *testing.T) {
 		out := renderKeyBindings(km, FilterFocus, 0)
 
-		for _, want := range []string{"quit", "edit regex", "move column", "keybindings"} {
+		for _, want := range []string{"quit", "edit filter", "move column", "keybindings"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("renderKeyBindings(FilterFocus) output missing %q, got: %q", want, out)
 			}
@@ -160,7 +160,7 @@ func TestRenderKeyBindings(t *testing.T) {
 				t.Errorf("renderKeyBindings(LogFocus) output missing %q, got: %q", want, out)
 			}
 		}
-		if strings.Contains(out, "edit regex") || strings.Contains(out, "move column") {
+		if strings.Contains(out, "edit filter") || strings.Contains(out, "move column") {
 			t.Errorf("renderKeyBindings(LogFocus) should not advertise filter-only bindings, got: %q", out)
 		}
 	})
@@ -348,30 +348,166 @@ func TestUpdateToggleEnabledCheckbox(t *testing.T) {
 	}
 }
 
-func TestUpdateEditRegexReturnsCommand(t *testing.T) {
+func TestUpdateEditRegexOpensFilterEditor(t *testing.T) {
 	filters := []filterfiles.Filter{mustFilter(t, "a")}
 	m := newTestModel(t, filters, "line\n")
 
-	_, cmd := m.Update(keyMsg("i"))
-	if cmd == nil {
-		t.Fatal("Update(i) with a selected filter returned a nil Cmd, want the regex editor command")
+	newModel, cmd := m.Update(keyMsg("i"))
+	m = newModel.(model)
+	if !m.editingFilter {
+		t.Fatal("Update(i) with a selected filter did not open the filter editor")
+	}
+	if cmd != nil {
+		t.Error("Update(i) opening the filter editor returned a non-nil Cmd, want nil (no more external $EDITOR)")
 	}
 }
 
 func TestUpdateEditRegexNoOpWithoutFilters(t *testing.T) {
 	m := newTestModel(t, nil, "line\n")
 
-	_, cmd := m.Update(keyMsg("i"))
+	newModel, cmd := m.Update(keyMsg("i"))
+	m = newModel.(model)
+	if m.editingFilter {
+		t.Error("Update(i) with no filters opened the filter editor, want no-op")
+	}
 	if cmd != nil {
 		t.Error("Update(i) with no filters returned a non-nil Cmd, want nil")
 	}
 }
 
-func TestUpdateEditorFinishedMsgAppliesEditAndCleansUpTempFile(t *testing.T) {
+func TestUpdateNewFilterOpensFilterEditor(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+
+	newModel, _ := m.Update(keyMsg("a"))
+	m = newModel.(model)
+
+	if len(m.filters.Filters) != 2 {
+		t.Fatalf("got %d filters after 'a', want 2", len(m.filters.Filters))
+	}
+	if !m.filtersDirty {
+		t.Error("filtersDirty = false after adding a filter, want true")
+	}
+	if !m.editingFilter {
+		t.Error("Update(a) did not open the filter editor")
+	}
+}
+
+func TestFilterEditorEditDescription(t *testing.T) {
 	filters := []filterfiles.Filter{mustFilter(t, "a")}
 	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldDescription}
 
-	tmp, err := os.CreateTemp(t.TempDir(), "skim-regex-*.txt")
+	m = update(t, m, keyMsg("enter"))
+	if !m.filterEditor.editingText {
+		t.Fatal("enter on the description field did not start text capture")
+	}
+	m = update(t, m, keyMsg("h"), keyMsg("i"), keyMsg("enter"))
+	if m.filterEditor.editingText {
+		t.Error("editingText still true after confirming with enter")
+	}
+	if m.filters.Filters[0].XML.Description != "hi" {
+		t.Errorf("Description = %q, want %q", m.filters.Filters[0].XML.Description, "hi")
+	}
+	if !m.filtersDirty {
+		t.Error("filtersDirty = false after editing description, want true")
+	}
+}
+
+func TestFilterEditorEditRegexValid(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldRegex}
+
+	// enter starts editing with the buffer pre-filled from the existing
+	// text ("a"); backspace clears it before typing the replacement.
+	m = update(t, m, keyMsg("enter"), keyMsg("backspace"), keyMsg("b"), keyMsg("enter"))
+	if m.filterEditor.editingText {
+		t.Error("editingText still true after confirming a valid regex")
+	}
+	if m.filters.Filters[0].XML.Text != "b" {
+		t.Errorf("XML.Text = %q, want %q", m.filters.Filters[0].XML.Text, "b")
+	}
+	if !m.filters.Filters[0].Regex.MatchString("bbb") {
+		t.Error("recompiled regex does not match the new text")
+	}
+}
+
+func TestFilterEditorEditRegexInvalidStaysInEditModeWithError(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldRegex}
+
+	m = update(t, m, keyMsg("enter"), keyMsg("("), keyMsg("enter"))
+	if !m.filterEditor.editingText {
+		t.Error("editingText became false after confirming an invalid regex, want to stay in edit mode")
+	}
+	if m.filterEditor.regexErr == "" {
+		t.Error("regexErr is empty after confirming an invalid regex, want a compile error")
+	}
+	if m.filters.Filters[0].XML.Text != "a" {
+		t.Errorf("XML.Text = %q after invalid edit, want unchanged %q", m.filters.Filters[0].XML.Text, "a")
+	}
+}
+
+func TestFilterEditorCtrlEMidEditReturnsCommand(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldRegex}
+	m = update(t, m, keyMsg("enter")) // start editing
+
+	newModel, cmd := m.Update(keyMsg("ctrl+e"))
+	m = newModel.(model)
+	if cmd == nil {
+		t.Fatal("ctrl+e while editing a text field returned a nil Cmd, want the external editor command")
+	}
+	if !m.filterEditor.editingText {
+		t.Error("editingText became false after ctrl+e, want to stay in edit mode until the editor returns")
+	}
+}
+
+func TestFilterEditorCtrlEFromHoverReturnsCommandWithoutEnteringEditMode(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldRegex}
+
+	newModel, cmd := m.Update(keyMsg("ctrl+e"))
+	m = newModel.(model)
+	if cmd == nil {
+		t.Fatal("ctrl+e while hovering a text field returned a nil Cmd, want the external editor command")
+	}
+	if m.filterEditor.editingText {
+		t.Error("editingText became true after ctrl+e from hover, want it to stay false until the editor returns")
+	}
+}
+
+func TestFilterEditorCtrlEFromHoverNoOpOnNonTextField(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldEnabled}
+
+	newModel, cmd := m.Update(keyMsg("ctrl+e"))
+	m = newModel.(model)
+	if cmd != nil {
+		t.Error("ctrl+e while hovering a non-text field returned a non-nil Cmd, want no-op")
+	}
+	if !m.editingFilter {
+		t.Error("ctrl+e on a non-text field closed the filter editor, want no-op")
+	}
+}
+
+func TestFilterFieldEditorFinishedMsgFromHoverAppliesRegexWithoutPriorEditMode(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldRegex} // hovering, not editing
+
+	tmp, err := os.CreateTemp(t.TempDir(), "skim-filter-field-*.txt")
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
@@ -380,7 +516,7 @@ func TestUpdateEditorFinishedMsgAppliesEditAndCleansUpTempFile(t *testing.T) {
 	}
 	tmp.Close()
 
-	newModel, cmd := m.Update(editorFinishedMsg{tempFile: tmp.Name(), index: 0})
+	newModel, cmd := m.Update(filterFieldEditorFinishedMsg{tempFile: tmp.Name(), field: fieldRegex})
 	m = newModel.(model)
 
 	if m.filters.Filters[0].XML.Text != "goodbye" {
@@ -389,21 +525,155 @@ func TestUpdateEditorFinishedMsgAppliesEditAndCleansUpTempFile(t *testing.T) {
 	if !m.filters.Filters[0].Regex.MatchString("goodbye world") {
 		t.Error("recompiled regex does not match the new text")
 	}
-	if _, err := os.Stat(tmp.Name()); !os.IsNotExist(err) {
-		t.Error("temp file was not cleaned up after editorFinishedMsg was handled")
+	if m.filterEditor.editingText {
+		t.Error("editingText true after a successful hover-triggered external edit, want false (back to hover)")
 	}
 	assertClearsScreen(t, cmd)
 }
 
-func TestUpdateEditorFinishedMsgWithErrorLeavesFilterUnchanged(t *testing.T) {
+func TestFilterFieldEditorFinishedMsgFromHoverInvalidRegexEntersEditModeWithError(t *testing.T) {
 	filters := []filterfiles.Filter{mustFilter(t, "a")}
 	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldRegex} // hovering, not editing
 
-	newModel, cmd := m.Update(editorFinishedMsg{err: os.ErrInvalid})
+	tmp, err := os.CreateTemp(t.TempDir(), "skim-filter-field-*.txt")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	if _, err := tmp.WriteString("([unclosed"); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+	tmp.Close()
+
+	newModel, cmd := m.Update(filterFieldEditorFinishedMsg{tempFile: tmp.Name(), field: fieldRegex})
+	m = newModel.(model)
+
+	// A hover-triggered edit never set editingText itself; an invalid
+	// result must still surface (drop into edit mode with the error and
+	// the attempted text), not vanish silently back into hover mode.
+	if !m.filterEditor.editingText {
+		t.Error("editingText false after an invalid hover-triggered external edit, want true so the error and buffer are visible")
+	}
+	if m.filterEditor.regexErr == "" {
+		t.Error("regexErr is empty after an invalid hover-triggered external edit")
+	}
+	if m.filterEditor.textBuf != "([unclosed" {
+		t.Errorf("textBuf = %q, want the attempted text %q so the user can fix it", m.filterEditor.textBuf, "([unclosed")
+	}
+	if m.filters.Filters[0].XML.Text != "a" {
+		t.Errorf("XML.Text = %q after invalid hover-triggered edit, want unchanged %q", m.filters.Filters[0].XML.Text, "a")
+	}
+	assertClearsScreen(t, cmd)
+}
+
+func TestFilterFieldEditorFinishedMsgAppliesDescriptionAndCleansUpTempFile(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldDescription, editingText: true}
+
+	tmp, err := os.CreateTemp(t.TempDir(), "skim-filter-field-*.txt")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	if _, err := tmp.WriteString("payment errors\n"); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+	tmp.Close()
+
+	newModel, cmd := m.Update(filterFieldEditorFinishedMsg{tempFile: tmp.Name(), field: fieldDescription})
+	m = newModel.(model)
+
+	if m.filters.Filters[0].XML.Description != "payment errors" {
+		t.Errorf("Description = %q, want %q", m.filters.Filters[0].XML.Description, "payment errors")
+	}
+	if m.filterEditor.editingText {
+		t.Error("editingText still true after the external editor returned successfully")
+	}
+	if !m.filtersDirty {
+		t.Error("filtersDirty = false after applying an external-editor description, want true")
+	}
+	if _, err := os.Stat(tmp.Name()); !os.IsNotExist(err) {
+		t.Error("temp file was not cleaned up after filterFieldEditorFinishedMsg was handled")
+	}
+	assertClearsScreen(t, cmd)
+}
+
+func TestFilterFieldEditorFinishedMsgAppliesRegex(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldRegex, editingText: true}
+
+	tmp, err := os.CreateTemp(t.TempDir(), "skim-filter-field-*.txt")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	if _, err := tmp.WriteString("goodbye\n"); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+	tmp.Close()
+
+	newModel, cmd := m.Update(filterFieldEditorFinishedMsg{tempFile: tmp.Name(), field: fieldRegex})
+	m = newModel.(model)
+
+	if m.filters.Filters[0].XML.Text != "goodbye" {
+		t.Errorf("XML.Text = %q, want %q", m.filters.Filters[0].XML.Text, "goodbye")
+	}
+	if !m.filters.Filters[0].Regex.MatchString("goodbye world") {
+		t.Error("recompiled regex does not match the new text")
+	}
+	if m.filterEditor.editingText {
+		t.Error("editingText still true after the external editor returned a valid regex")
+	}
+	assertClearsScreen(t, cmd)
+}
+
+func TestFilterFieldEditorFinishedMsgInvalidRegexStaysInEditModeWithError(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldRegex, editingText: true}
+
+	tmp, err := os.CreateTemp(t.TempDir(), "skim-filter-field-*.txt")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	if _, err := tmp.WriteString("([unclosed"); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+	tmp.Close()
+
+	newModel, cmd := m.Update(filterFieldEditorFinishedMsg{tempFile: tmp.Name(), field: fieldRegex})
+	m = newModel.(model)
+
+	if !m.filterEditor.editingText {
+		t.Error("editingText became false after the external editor returned an invalid regex, want to stay in edit mode")
+	}
+	if m.filterEditor.regexErr == "" {
+		t.Error("regexErr is empty after the external editor returned an invalid regex")
+	}
+	if m.filters.Filters[0].XML.Text != "a" {
+		t.Errorf("XML.Text = %q after invalid external edit, want unchanged %q", m.filters.Filters[0].XML.Text, "a")
+	}
+	assertClearsScreen(t, cmd)
+}
+
+func TestFilterFieldEditorFinishedMsgWithErrorLeavesFilterUnchanged(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldRegex, editingText: true, textBuf: "a"}
+
+	newModel, cmd := m.Update(filterFieldEditorFinishedMsg{err: os.ErrInvalid, field: fieldRegex})
 	m = newModel.(model)
 
 	if m.filters.Filters[0].XML.Text != "a" {
-		t.Errorf("XML.Text = %q after errored edit, want unchanged %q", m.filters.Filters[0].XML.Text, "a")
+		t.Errorf("XML.Text = %q after errored external edit, want unchanged %q", m.filters.Filters[0].XML.Text, "a")
+	}
+	if !m.filterEditor.editingText {
+		t.Error("editingText became false after an errored external edit, want to stay in edit mode")
 	}
 	assertClearsScreen(t, cmd)
 }
@@ -416,16 +686,160 @@ func TestUpdateEditorFinishedMsgWithErrorLeavesFilterUnchanged(t *testing.T) {
 // diffs the next frame against a stale cached "last render" that no longer
 // matches what $EDITOR left on the real screen, leaving artifacts on screen
 // indefinitely (same failure mode as the height-overflow bug fixed in
-// 249e230, different trigger). editorFinishedMsg's handler must return
-// tea.ClearScreen to force a real repaint despite that no-op.
+// 249e230, different trigger). filterFieldEditorFinishedMsg's handler must
+// return tea.ClearScreen to force a real repaint despite that no-op.
 func assertClearsScreen(t *testing.T, cmd tea.Cmd) {
 	t.Helper()
 	if cmd == nil {
-		t.Fatal("Update(editorFinishedMsg) returned a nil Cmd, want tea.ClearScreen")
+		t.Fatal("Update(filterFieldEditorFinishedMsg) returned a nil Cmd, want tea.ClearScreen")
 	}
 	if !reflect.DeepEqual(cmd(), tea.ClearScreen()) {
-		t.Errorf("Update(editorFinishedMsg) Cmd yielded %#v, want tea.ClearScreen's message", cmd())
+		t.Errorf("Update(filterFieldEditorFinishedMsg) Cmd yielded %#v, want tea.ClearScreen's message", cmd())
 	}
+}
+
+func TestFilterEditorToggleCheckboxes(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldExcluding}
+
+	if m.filters.Filters[0].Excluding {
+		t.Fatal("precondition: filter should start non-excluding")
+	}
+	m = update(t, m, keyMsg("enter"))
+	if !m.filters.Filters[0].Excluding {
+		t.Error("Excluding still false after enter on the Excluding field")
+	}
+	if !m.filtersDirty {
+		t.Error("filtersDirty = false after toggling Excluding, want true")
+	}
+}
+
+func TestFilterEditorEscCloses(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{}
+
+	m = update(t, m, keyMsg("esc"))
+	if m.editingFilter {
+		t.Error("esc did not close the filter editor")
+	}
+}
+
+func TestFilterEditorColorPickerKeyboardSelect(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldColor}
+
+	m = update(t, m, keyMsg("enter")) // opens the color picker
+	if !m.filterEditor.colorPicker.open {
+		t.Fatal("enter on the Color field did not open the color picker")
+	}
+
+	m = update(t, m, keyMsg("right"), keyMsg("down"), keyMsg("enter"))
+	if m.filterEditor.colorPicker.open {
+		t.Error("color picker still open after enter on a swatch")
+	}
+	// The picker opens with the cursor on the filter's current color
+	// (colorPaletteIndexFor("#87CEFA"), which is in the palette), then
+	// right and down move it by 1 and colorPickerCols respectively.
+	startIdx := colorPaletteIndexFor("#87CEFA")
+	wantIdx := startIdx + 1 + colorPickerCols
+	if got := m.filters.Filters[0].BackColor; got != colorPalette[wantIdx] {
+		t.Errorf("BackColor = %q, want %q (palette[%d])", got, colorPalette[wantIdx], wantIdx)
+	}
+	if !m.filtersDirty {
+		t.Error("filtersDirty = false after picking a color, want true")
+	}
+}
+
+func TestFilterEditorColorPickerMouseClickSelects(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldColor}
+	m = update(t, m, keyMsg("enter"))
+
+	x := colorPickerGridStartX()
+	y := colorPickerGridStartY()
+	newModel, _ := m.Update(tea.MouseMsg{X: x, Y: y, Type: tea.MouseLeft})
+	m = newModel.(model)
+
+	if m.filterEditor.colorPicker.open {
+		t.Error("color picker still open after a click on a swatch")
+	}
+	if got := m.filters.Filters[0].BackColor; got != colorPalette[0] {
+		t.Errorf("BackColor = %q after clicking the first swatch, want %q", got, colorPalette[0])
+	}
+}
+
+func TestFilterEditorColorPickerMouseClickOutsideGridIsNoOp(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldColor}
+	m = update(t, m, keyMsg("enter"))
+	before := m.filters.Filters[0].BackColor
+
+	newModel, _ := m.Update(tea.MouseMsg{X: 0, Y: 0, Type: tea.MouseLeft})
+	m = newModel.(model)
+
+	if !m.filterEditor.colorPicker.open {
+		t.Error("color picker closed after a click outside the grid, want still open")
+	}
+	if got := m.filters.Filters[0].BackColor; got != before {
+		t.Errorf("BackColor changed to %q after an out-of-grid click, want unchanged %q", got, before)
+	}
+}
+
+func TestFilterEditorColorPickerCustomHex(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldColor}
+	m = update(t, m, keyMsg("enter"), keyMsg("c"))
+
+	if !m.filterEditor.colorPicker.customEditing {
+		t.Fatal("'c' did not start custom hex entry")
+	}
+
+	m = update(t, m, keyMsg("1"), keyMsg("2"), keyMsg("3"), keyMsg("a"), keyMsg("b"), keyMsg("c"), keyMsg("enter"))
+	if m.filterEditor.colorPicker.open {
+		t.Error("color picker still open after confirming a custom hex color")
+	}
+	if got := m.filters.Filters[0].BackColor; got != "#123ABC" {
+		t.Errorf("BackColor = %q, want %q", got, "#123ABC")
+	}
+}
+
+func TestFilterEditorColorPickerCustomHexInvalidLengthShowsError(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "a")}
+	m := newTestModel(t, filters, "line\n")
+	m.editingFilter = true
+	m.filterEditor = filterEditorState{cursor: fieldColor}
+	m = update(t, m, keyMsg("enter"), keyMsg("c"), keyMsg("1"), keyMsg("2"), keyMsg("enter"))
+
+	if !m.filterEditor.colorPicker.customEditing {
+		t.Error("custom hex entry exited after a too-short value, want it to stay open with an error")
+	}
+	if m.filterEditor.colorPicker.customErr == "" {
+		t.Error("customErr is empty after confirming a too-short hex value")
+	}
+}
+
+// update applies each msg to m in order via m.Update, returning the final
+// model. Test helper for driving a modal through a short key sequence
+// without threading newModel/m through every intermediate step by hand.
+func update(t *testing.T, m model, msgs ...tea.Msg) model {
+	t.Helper()
+	for _, msg := range msgs {
+		newModel, _ := m.Update(msg)
+		m = newModel.(model)
+	}
+	return m
 }
 
 func TestMouseWheelScrollsFocusedView(t *testing.T) {
@@ -953,23 +1367,6 @@ func TestSearchNextNoOpWithoutPriorSearch(t *testing.T) {
 	m = newModel.(model)
 	if m.log.Cursor != 0 {
 		t.Errorf("log.Cursor after n with no prior search = %d, want unchanged 0", m.log.Cursor)
-	}
-}
-
-func TestUpdateNewFilterOpensEditorAndMarksDirty(t *testing.T) {
-	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
-
-	newModel, cmd := m.Update(keyMsg("a"))
-	m = newModel.(model)
-
-	if len(m.filters.Filters) != 2 {
-		t.Fatalf("got %d filters after 'a', want 2", len(m.filters.Filters))
-	}
-	if !m.filtersDirty {
-		t.Error("filtersDirty = false after adding a filter, want true")
-	}
-	if cmd == nil {
-		t.Fatal("Update(a) returned a nil Cmd, want the regex editor command")
 	}
 }
 

@@ -9,7 +9,7 @@ Set Theme "Dracula"
 Set TypingSpeed 60ms
 
 Hide
-Type "export EDITOR=vi && clear"
+Type "clear"
 Enter
 Show
 
@@ -18,15 +18,23 @@ Sleep 500ms
 Enter
 Sleep 1200ms
 
-# Cursor starts on the first (red) filter row, which just has a placeholder regex
+# Cursor starts on the first (red) filter row, which just has a placeholder
+# regex. "i" opens the filter editor.
 Type "i"
 Sleep 800ms
-Type "ciwERROR"
-Escape
+
+# Move down to the Regex field and edit it in place.
+Down
 Sleep 400ms
-Type ":wq"
 Enter
-Sleep 1200ms
+Sleep 400ms
+Backspace 7
+Type "ERROR"
+Sleep 400ms
+Enter
+Sleep 400ms
+Escape
+Sleep 800ms
 
 # Enable the filter to see it take effect
 Enter
@@ -37,12 +45,17 @@ Down
 Sleep 500ms
 Type "i"
 Sleep 800ms
-Type "ciwWARN"
-Escape
+Down
 Sleep 400ms
-Type ":wq"
 Enter
-Sleep 1200ms
+Sleep 400ms
+Backspace 7
+Type "WARN"
+Sleep 400ms
+Enter
+Sleep 400ms
+Escape
+Sleep 800ms
 Enter
 Sleep 1800ms
 

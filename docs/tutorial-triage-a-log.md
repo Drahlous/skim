@@ -29,9 +29,9 @@ Press `h` again to turn hide-unmatched back **on** before continuing — you'll 
 
 Press `tab` to move focus to the Filters pane. The cursor starts on the first row (red, `EDIT_ME`).
 
-1. Press `i` to open that filter's regex in `$EDITOR`.
-2. Replace `EDIT_ME` with `ERROR`, then save and quit the editor.
-3. Press `enter` (or `space`) to enable the filter — the cursor is already on the enabled checkbox column, so this flips `[ ]` to `[x]`.
+1. Press `i` to open the filter editor.
+2. Move down to the **Regex** field, press `enter`, clear `EDIT_ME` and type `ERROR`, then `enter` to confirm and `esc` to close the editor.
+3. Press `enter` (or `space`) to enable the filter — the cursor is back on the enabled checkbox column, so this flips `[ ]` to `[x]`.
 
 The Log pane immediately updates to `showing 6/44 lines`: every line containing `ERROR`, colored red. You can see two requests each produced a timeout error with a two-line stack trace.
 
@@ -39,7 +39,7 @@ The Log pane immediately updates to `showing 6/44 lines`: every line containing 
 
 Move the cursor down (`j`) to the second filter row (gold).
 
-1. `i` → replace `EDIT_ME` with `WARN` → save and quit.
+1. `i` → move to **Regex**, `enter`, clear `EDIT_ME` and type `WARN`, `enter` to confirm → `esc` to close.
 2. `enter`/`space` to enable it.
 
 Now `showing 10/44 lines`: the 6 `ERROR` lines plus 4 `WARN` lines (`payment-gateway response slow ... retrying`), gold before each request's red timeout. Both failing requests show the same pattern — two slow-response warnings, then a timeout.
@@ -50,7 +50,7 @@ Errors and warnings tell you *what* went wrong, but not the surrounding context 
 
 Move down (`j`) to the third filter row (blue):
 
-1. `i` → replace `EDIT_ME` with `req-1184` → save and quit.
+1. `i` → move to **Regex**, `enter`, clear `EDIT_ME` and type `req-1184`, `enter` to confirm → `esc` to close.
 2. `enter`/`space` to enable it.
 
 `showing 13/44 lines` — three new lines appeared: `req-1184`'s `request received`, `cart total calculated`, and `request completed: 502 Bad Gateway` entries. Its `WARN`/`ERROR` lines are still red/gold, not blue, even though they also contain `req-1184`.
@@ -59,7 +59,7 @@ That's filter order at work: skim colors each line using the **first enabled fil
 
 ## Step 5 — reorder to change precedence
 
-To make the trace filter "win" for everything belonging to `req-1184` — so you can visually follow one request's entire lifecycle in blue, independent of severity — move it earlier in the file. skim can't reorder filter rows from the UI, so edit `tutorial-start.tat` directly: cut the third `<filter ... text="req-1184" />` line and paste it above the `ERROR` filter, then reload skim (it re-reads the filter file on launch).
+To make the trace filter "win" for everything belonging to `req-1184` — so you can visually follow one request's entire lifecycle in blue, independent of severity — move it earlier in the file. With the cursor still on the `req-1184` filter row, press `[` twice to move it above both the `ERROR` and `WARN` filters.
 
 The total shown stays `13/44` — the same 13 lines still match *something* — but now all 8 lines mentioning `req-1184` (including its warnings and error) are blue, and the `ERROR`/`WARN` filters only claim the remaining lines from the other failing request, `req-1182`.
 
@@ -73,8 +73,8 @@ go run . -log examples/tutorial/checkout-service.log -filter examples/tutorial/t
 
 - Building a filter set incrementally, going from an unfiltered wall of text to exactly the lines relevant to the question.
 - `hide unmatched` plus enabling filters one at a time as the core way to cut noise without losing anything.
-- Editing regexes live with `i` and seeing results immediately, with no restart.
-- Filter order determining which filter "claims" (and colors) a line when more than one would match — and that reordering is a `.tat` file edit, not a UI action.
+- Editing filters live with `i` and seeing results immediately, with no restart.
+- Filter order determining which filter "claims" (and colors) a line when more than one would match, and reordering rows with `[`/`]` to change that precedence.
 
 From here, `examples/tutorial/tutorial-solution.tat` is a reasonable starting point to adapt for a real service: swap in your own error signatures and request-ID pattern, and save it alongside the logs you pull it out for next time.
 

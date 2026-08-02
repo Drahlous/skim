@@ -14,15 +14,15 @@ skim reads filter files in the same XML format used by [TextAnalysisTool.NET](ht
 Long logs bury the handful of lines you actually care about under thousands you don't. skim is built around two ideas:
 
 - **Reusable filters.** Save a `.tat` filter file once — matching the error signature, request ID, or subsystem you care about — and reuse it every time that scenario comes up again.
-- **Live iteration.** When you don't yet know exactly what you're looking for, edit a filter's regex directly in the UI and watch matches update immediately, without leaving the log or restarting skim.
+- **Live iteration.** When you don't yet know exactly what you're looking for, edit a filter directly in the UI — regex, color, description, case sensitivity, exclusion — and watch matches update immediately, without leaving the log or restarting skim.
 
 Every matching line is colored by the filter that matched it, and lines that don't match anything can be hidden entirely with one keystroke, turning a wall of text into just the lines relevant to your question.
 
 ## In action
 
-Editing a filter's regex opens it in `$EDITOR`; saving and quitting recompiles it and updates the log view immediately, no restart required:
+Editing a filter opens a form for all of its fields — regex, color, description, case sensitivity, exclusion — right in the UI; confirming a field recompiles/applies it and updates the log view immediately, no restart required:
 
-![Editing a filter's regex live in $EDITOR and watching matches update immediately](./screenshots/demo-live-edit.gif)
+![Editing a filter live in the filter editor and watching matches update immediately](./screenshots/demo-live-edit.gif)
 
 This is the same investigation walked through step by step in the [tutorial](./docs/tutorial-triage-a-log.md), using the log and filter files in `examples/tutorial/`.
 
@@ -30,8 +30,8 @@ This is the same investigation walked through step by step in the [tutorial](./d
 
 - Color-coded highlighting of log lines, driven by regex filters you control
 - Hide/show lines that don't match any enabled filter, with a live `showing X/Y lines` status indicator
-- Live regex editing in `$EDITOR`, applied to the running view immediately
-- Toggle filters on/off and case-sensitivity per filter, without editing the filter file by hand
+- Live filter editing in a form (regex, color, description, case sensitivity, exclusion), including a mouse- and keyboard-navigable color picker, applied to the running view immediately
+- Toggle filters on/off, case-sensitivity, and exclusion per filter directly from the Filters pane, without editing the filter file by hand
 - Fully rebindable keybindings, persisted across sessions
 - Compatible with existing TextAnalysisTool.NET `.tat` filter files
 
