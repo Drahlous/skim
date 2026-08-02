@@ -147,22 +147,27 @@ func (v *FilterView) Delete() {
 // Cursor along with it. Filter order determines highlighting precedence
 // (see filterfiles.GetMatchingFilter), so this changes which filter "wins"
 // on lines more than one filter would otherwise match. No-op at the top of
-// the list.
-func (v *FilterView) MoveUp() {
+// the list; the returned bool reports whether a swap actually happened, so
+// callers can tell a real move from a no-op (e.g. to avoid marking state
+// dirty when nothing changed).
+func (v *FilterView) MoveUp() bool {
 	if v.Cursor <= 0 || v.Cursor >= len(v.Filters) {
-		return
+		return false
 	}
 	v.Filters[v.Cursor-1], v.Filters[v.Cursor] = v.Filters[v.Cursor], v.Filters[v.Cursor-1]
 	v.Cursor--
+	return true
 }
 
-// MoveDown is MoveUp in the other direction: no-op at the bottom of the list.
-func (v *FilterView) MoveDown() {
+// MoveDown is MoveUp in the other direction: no-op (returns false) at the
+// bottom of the list.
+func (v *FilterView) MoveDown() bool {
 	if v.Cursor < 0 || v.Cursor >= len(v.Filters)-1 {
-		return
+		return false
 	}
 	v.Filters[v.Cursor+1], v.Filters[v.Cursor] = v.Filters[v.Cursor], v.Filters[v.Cursor+1]
 	v.Cursor++
+	return true
 }
 
 var filterStyle = lipgloss.NewStyle().

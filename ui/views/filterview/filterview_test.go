@@ -323,7 +323,9 @@ func TestMoveUpAtTopIsNoOp(t *testing.T) {
 		},
 		Cursor: 0,
 	}
-	v.MoveUp()
+	if moved := v.MoveUp(); moved {
+		t.Error("MoveUp() at top returned true, want false (no-op)")
+	}
 	if v.Cursor != 0 {
 		t.Errorf("Cursor after MoveUp at top = %d, want unchanged 0", v.Cursor)
 	}
@@ -340,7 +342,9 @@ func TestMoveDownAtBottomIsNoOp(t *testing.T) {
 		},
 		Cursor: 1,
 	}
-	v.MoveDown()
+	if moved := v.MoveDown(); moved {
+		t.Error("MoveDown() at bottom returned true, want false (no-op)")
+	}
 	if v.Cursor != 1 {
 		t.Errorf("Cursor after MoveDown at bottom = %d, want unchanged 1", v.Cursor)
 	}
@@ -351,14 +355,32 @@ func TestMoveDownAtBottomIsNoOp(t *testing.T) {
 
 func TestMoveUpDownOnEmptyOrSingleListIsNoOp(t *testing.T) {
 	empty := FilterView{}
-	empty.MoveUp()
-	empty.MoveDown()
+	if empty.MoveUp() || empty.MoveDown() {
+		t.Error("MoveUp/MoveDown on an empty list returned true, want false")
+	}
 
 	single := FilterView{Filters: []filterfiles.Filter{mustFilter(t, "a", false, true, "#000000")}}
-	single.MoveUp()
-	single.MoveDown()
+	if single.MoveUp() || single.MoveDown() {
+		t.Error("MoveUp/MoveDown on a single-element list returned true, want false")
+	}
 	if single.Filters[0].XML.Text != "a" {
 		t.Error("single-element list should be unaffected by MoveUp/MoveDown")
+	}
+}
+
+func TestMoveUpDownReturnTrueWhenTheyActuallyMove(t *testing.T) {
+	v := FilterView{
+		Filters: []filterfiles.Filter{
+			mustFilter(t, "a", false, true, "#000000"),
+			mustFilter(t, "b", false, true, "#000000"),
+		},
+		Cursor: 1,
+	}
+	if moved := v.MoveUp(); !moved {
+		t.Error("MoveUp() with room to move returned false, want true")
+	}
+	if moved := v.MoveDown(); !moved {
+		t.Error("MoveDown() with room to move returned false, want true")
 	}
 }
 

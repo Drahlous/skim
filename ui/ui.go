@@ -340,9 +340,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			view.CursorRight()
 
 		case keybindings.Toggle:
-			// Toggles the selected state for the item under the cursor
+			// Toggles the selected state for the item under the cursor.
+			// FilterView.Toggle is a no-op against an empty filter list
+			// (reachable via d), which shouldn't be reported as a change.
 			view.Toggle()
-			if m.focus == FilterFocus {
+			if m.focus == FilterFocus && len(m.filters.Filters) > 0 {
 				m.filtersDirty = true
 				m.saveStatus = ""
 			}
@@ -380,14 +382,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case keybindings.MoveFilterUp:
-			m.filters.MoveUp()
-			m.filtersDirty = true
-			m.saveStatus = ""
+			if m.filters.MoveUp() {
+				m.filtersDirty = true
+				m.saveStatus = ""
+			}
 
 		case keybindings.MoveFilterDown:
-			m.filters.MoveDown()
-			m.filtersDirty = true
-			m.saveStatus = ""
+			if m.filters.MoveDown() {
+				m.filtersDirty = true
+				m.saveStatus = ""
+			}
 
 		case keybindings.SaveFilters:
 			if err := filterfiles.WriteFilterFile(m.filterFilePath, m.fileMeta, m.filters.Filters); err != nil {

@@ -602,6 +602,44 @@ func TestUpdateMoveFilterUpDown(t *testing.T) {
 	}
 }
 
+func TestUpdateMoveFilterNoOpAtBoundaryDoesNotMarkDirty(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a"), mustFilter(t, "b")}, "line\n")
+	// Cursor starts at 0 (the top): '[' (move up) should be a no-op.
+	newModel, _ := m.Update(keyMsg("["))
+	m = newModel.(model)
+	if m.filtersDirty {
+		t.Error("filtersDirty = true after a no-op move at the top boundary, want false")
+	}
+
+	// Move cursor to the bottom: ']' (move down) should now be a no-op.
+	newModel, _ = m.Update(keyMsg("j"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("]"))
+	m = newModel.(model)
+	if m.filtersDirty {
+		t.Error("filtersDirty = true after a no-op move at the bottom boundary, want false")
+	}
+}
+
+func TestUpdateToggleOnEmptyFilterListDoesNotMarkDirty(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+
+	newModel, _ := m.Update(keyMsg("d")) // delete the only filter
+	m = newModel.(model)
+	if len(m.filters.Filters) != 0 {
+		t.Fatalf("precondition: expected an empty filter list, got %d filters", len(m.filters.Filters))
+	}
+	// Deleting marks dirty (a real change); reset it to isolate Toggle's
+	// own behavior against the now-empty list.
+	m.filtersDirty = false
+
+	newModel, _ = m.Update(keyMsg("enter")) // Toggle against an empty list
+	m = newModel.(model)
+	if m.filtersDirty {
+		t.Error("filtersDirty = true after toggling against an empty filter list, want false (no-op)")
+	}
+}
+
 func TestUpdateSaveFiltersSuccess(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
 	newModel, _ := m.Update(keyMsg("enter")) // toggle a filter off, so there's something to save
