@@ -8,6 +8,7 @@ import (
 	"skim/keybindings"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -539,6 +540,209 @@ func TestKeybindingsScreenCaptureEscCancelsWithoutRebinding(t *testing.T) {
 	}
 }
 
+func TestSearchOpensCapturesAndJumpsOnEnter(t *testing.T) {
+	m := newTestModel(t, nil, "alpha\nbravo\ncharlie\nbravo two\n")
+	newModel, _ := m.Update(keyMsg("tab")) // LogFocus
+	m = newModel.(model)
+
+	newModel, _ = m.Update(keyMsg("/"))
+	m = newModel.(model)
+	if !m.searching {
+		t.Fatal("searching = false after /, want true")
+	}
+
+	for _, r := range "bravo" {
+		newModel, _ = m.Update(keyMsg(string(r)))
+		m = newModel.(model)
+	}
+	if m.searchText != "bravo" {
+		t.Fatalf("searchText = %q, want %q", m.searchText, "bravo")
+	}
+
+	newModel, _ = m.Update(keyMsg("enter"))
+	m = newModel.(model)
+
+	if m.searching {
+		t.Error("searching still true after enter, want false")
+	}
+	if !m.hasSearch {
+		t.Fatal("hasSearch = false after a valid pattern, want true")
+	}
+	if m.log.Cursor != 1 {
+		t.Errorf("log.Cursor after search = %d, want 1 (first line containing %q)", m.log.Cursor, "bravo")
+	}
+}
+
+func TestSearchBackspaceAndEscCancel(t *testing.T) {
+	m := newTestModel(t, nil, "alpha\nbravo\n")
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("/"))
+	m = newModel.(model)
+
+	newModel, _ = m.Update(keyMsg("a"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("b"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("backspace"))
+	m = newModel.(model)
+	if m.searchText != "a" {
+		t.Fatalf("searchText after backspace = %q, want %q", m.searchText, "a")
+	}
+
+	newModel, _ = m.Update(keyMsg("esc"))
+	m = newModel.(model)
+	if m.searching {
+		t.Error("searching still true after esc, want false")
+	}
+	if m.searchText != "" {
+		t.Errorf("searchText after esc = %q, want empty", m.searchText)
+	}
+	if m.hasSearch {
+		t.Error("hasSearch = true after esc cancel, want false (no pattern was ever submitted)")
+	}
+}
+
+func TestSearchBackspaceRemovesWholeRuneNotJustOneByte(t *testing.T) {
+	m := newTestModel(t, nil, "line\n")
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("/"))
+	m = newModel.(model)
+
+	// "é" is a single rune but two UTF-8 bytes; a byte-based backspace would
+	// leave a dangling, invalid partial byte instead of removing it whole.
+	for _, r := range "café" {
+		newModel, _ = m.Update(keyMsg(string(r)))
+		m = newModel.(model)
+	}
+	if m.searchText != "café" {
+		t.Fatalf("precondition: searchText = %q, want %q", m.searchText, "café")
+	}
+
+	newModel, _ = m.Update(keyMsg("backspace"))
+	m = newModel.(model)
+
+	if m.searchText != "caf" {
+		t.Errorf("searchText after one backspace on %q = %q, want %q", "café", m.searchText, "caf")
+	}
+	if !utf8.ValidString(m.searchText) {
+		t.Errorf("searchText %q is not valid UTF-8 after backspace", m.searchText)
+	}
+}
+
+func TestSearchInvalidRegexSetsErrorAndStaysInSearchMode(t *testing.T) {
+	m := newTestModel(t, nil, "line\n")
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("/"))
+	m = newModel.(model)
+
+	for _, r := range "([unclosed" {
+		newModel, _ = m.Update(keyMsg(string(r)))
+		m = newModel.(model)
+	}
+	newModel, _ = m.Update(keyMsg("enter"))
+	m = newModel.(model)
+
+	if m.searchErr == "" {
+		t.Error("searchErr is empty after an invalid regex, want an error message")
+	}
+	// Must stay in searching mode: renderSearchPrompt (the only place
+	// searchErr is ever displayed) only renders while m.searching is true,
+	// so leaving search mode here would make the error invisible to the
+	// user despite being computed.
+	if !m.searching {
+		t.Error("searching = false after an invalid regex, want true so the error actually renders")
+	}
+}
+
+func TestSearchInvalidRegexRetryDoesNotClobberPreviousSearch(t *testing.T) {
+	m := newTestModel(t, nil, "alpha\nbravo\ncharlie\n")
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+
+	// A first, valid search.
+	newModel, _ = m.Update(keyMsg("/"))
+	m = newModel.(model)
+	for _, r := range "bravo" {
+		newModel, _ = m.Update(keyMsg(string(r)))
+		m = newModel.(model)
+	}
+	newModel, _ = m.Update(keyMsg("enter"))
+	m = newModel.(model)
+	if !m.hasSearch {
+		t.Fatal("precondition: hasSearch should be true after a valid search")
+	}
+
+	// Retry with an invalid pattern.
+	newModel, _ = m.Update(keyMsg("/"))
+	m = newModel.(model)
+	for _, r := range "([unclosed" {
+		newModel, _ = m.Update(keyMsg(string(r)))
+		m = newModel.(model)
+	}
+	newModel, _ = m.Update(keyMsg("enter"))
+	m = newModel.(model)
+
+	if !m.hasSearch {
+		t.Error("hasSearch = false after a failed retry, want the previous valid search to remain usable")
+	}
+	if m.lastSearchText != "bravo" {
+		t.Errorf("lastSearchText = %q after a failed retry, want unchanged %q", m.lastSearchText, "bravo")
+	}
+
+	// n should still work using the previous search.
+	newModel, _ = m.Update(keyMsg("esc")) // dismiss the still-open error prompt first
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("n"))
+	m = newModel.(model)
+	if m.log.Cursor != 1 {
+		t.Errorf("log.Cursor after n post-failed-retry = %d, want 1 (bravo is still the active search)", m.log.Cursor)
+	}
+}
+
+func TestSearchNextAndPrevJumpUsingLastSearch(t *testing.T) {
+	m := newTestModel(t, nil, "alpha\nbravo\ncharlie\nbravo two\n")
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("/"))
+	m = newModel.(model)
+	for _, r := range "bravo" {
+		newModel, _ = m.Update(keyMsg(string(r)))
+		m = newModel.(model)
+	}
+	newModel, _ = m.Update(keyMsg("enter"))
+	m = newModel.(model)
+	if m.log.Cursor != 1 {
+		t.Fatalf("precondition: log.Cursor = %d, want 1", m.log.Cursor)
+	}
+
+	newModel, _ = m.Update(keyMsg("n"))
+	m = newModel.(model)
+	if m.log.Cursor != 3 {
+		t.Errorf("log.Cursor after n = %d, want 3", m.log.Cursor)
+	}
+
+	newModel, _ = m.Update(keyMsg("N"))
+	m = newModel.(model)
+	if m.log.Cursor != 1 {
+		t.Errorf("log.Cursor after N = %d, want 1", m.log.Cursor)
+	}
+}
+
+func TestSearchNextNoOpWithoutPriorSearch(t *testing.T) {
+	m := newTestModel(t, nil, "alpha\nbravo\n")
+	newModel, _ := m.Update(keyMsg("tab"))
+	m = newModel.(model)
+
+	newModel, _ = m.Update(keyMsg("n"))
+	m = newModel.(model)
+	if m.log.Cursor != 0 {
+		t.Errorf("log.Cursor after n with no prior search = %d, want unchanged 0", m.log.Cursor)
+	}
+}
+
 func TestUpdateNewFilterOpensEditorAndMarksDirty(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
 
@@ -801,5 +1005,43 @@ func TestViewDoesNotPanic(t *testing.T) {
 	out = m.View()
 	if !strings.Contains(out, "Keybindings") {
 		t.Errorf("View() while editingKeybindings missing header, got:\n%s", out)
+	}
+}
+
+func TestViewShowsSearchPromptWhileSearching(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "^debug")}, "debug: hello\nworld\n")
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("tab"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("/"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("w"))
+	m = newModel.(model)
+
+	out := m.View()
+	if !strings.Contains(out, "/w") {
+		t.Errorf("View() while searching missing the in-progress pattern, got:\n%s", out)
+	}
+}
+
+func TestViewShowsActiveSearchInStatusLine(t *testing.T) {
+	m := newTestModel(t, nil, "hello world\ngoodbye\n")
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("tab"))
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("/"))
+	m = newModel.(model)
+	for _, r := range "hello" {
+		newModel, _ = m.Update(keyMsg(string(r)))
+		m = newModel.(model)
+	}
+	newModel, _ = m.Update(keyMsg("enter"))
+	m = newModel.(model)
+
+	out := m.View()
+	if !strings.Contains(out, "search: /hello/") {
+		t.Errorf("View() after a committed search missing the active pattern in the status line, got:\n%s", out)
 	}
 }

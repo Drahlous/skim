@@ -79,6 +79,12 @@ The status line always tells you which mode you're in and how many lines are cur
 
 In practice this means: start with `hide unmatched` on and no filters (or all filters disabled) to see nothing, then enable filters one at a time to pull exactly the lines you care about out of the log. You never need to scroll past everything else to find them.
 
+## Searching the log
+
+Filters are for reusable, saved patterns. When you just want to find something *right now* without touching the filter file, press `/` in the Log pane, type a regex, and press `enter`. The cursor jumps to the first match after its current position, and the status line shows the active pattern (`search: /pattern/`).
+
+Press `n` to jump to the next match and `N` for the previous one, wrapping around at either end of the log. Search scans every line regardless of `hide unmatched`, so it can find and jump to a match even if that line is currently hidden. `esc` while typing a pattern cancels without changing the current search.
+
 ## Context lines and match counts
 
 Hiding unmatched lines is powerful but throws away sequence — you see the line that errored, but not what happened immediately before or after it. Press `+` in the Log pane to show a line of unmatched context on either side of every match (`grep -C` style); press it again to widen the radius, `-` to narrow it back down to 0. Context lines render plainly (uncolored), so they're easy to tell apart from an actual match. The current radius shows in the status line as `context: ±N` whenever it's non-zero.

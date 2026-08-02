@@ -16,6 +16,9 @@ Every action in skim is rebindable. This page lists the defaults and explains ho
 | Hide unmatched lines | `h` | Log pane only | Toggle whether log lines with no matching enabled filter are shown |
 | Edit regex in `$EDITOR` | `i` | Filters pane only | Open the selected filter's regex text in `$EDITOR` |
 | Edit keybindings | `K` | global | Open the keybindings editor screen |
+| Search log | `/` | Log pane only | Start typing an ad-hoc regex search, independent of the `.tat` filters |
+| Jump to next match | `n` | Log pane only | Move the cursor to the next line matching the last search |
+| Jump to previous match | `N` | Log pane only | Move the cursor to the previous line matching the last search |
 | New filter | `a` | Filters pane only | Insert a new, disabled filter after the cursor and open its regex in `$EDITOR` |
 | Delete filter | `d` | Filters pane only | Remove the filter under the cursor |
 | Move filter up | `[` | Filters pane only | Swap the filter under the cursor with the one above it |

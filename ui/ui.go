@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"skim/filterfiles"
 	"skim/keybindings"
 	filterview "skim/ui/views/filterview"
@@ -81,6 +82,9 @@ func renderStatusLine(m model) string {
 	if m.contextLines > 0 {
 		line += fmt.Sprintf("  |  context: ±%d", m.contextLines)
 	}
+	if m.hasSearch {
+		line += fmt.Sprintf("  |  search: /%s/", m.lastSearchText)
+	}
 	if m.filtersDirty {
 		line += "  |  unsaved filter changes"
 	}
@@ -88,6 +92,15 @@ func renderStatusLine(m model) string {
 		line += "  |  " + m.saveStatus
 	}
 	return line
+}
+
+// renderSearchPrompt shows the in-progress search pattern (or its compile
+// error) in place of the help bar while the user is typing after "/".
+func renderSearchPrompt(m model) string {
+	if m.searchErr != "" {
+		return fmt.Sprintf("/%s  (invalid regex: %s)", m.searchText, m.searchErr)
+	}
+	return fmt.Sprintf("/%s", m.searchText)
 }
 
 // displayKey renders a raw key string (as stored in a keybindings.KeyMap)
@@ -131,6 +144,8 @@ func renderKeyBindings(km keybindings.KeyMap, focus Focus) string {
 	case LogFocus:
 		parts = append(parts,
 			fmt.Sprintf("%s: hide unmatched", strings.Join(km[keybindings.ToggleHideUnmatched], "/")),
+			fmt.Sprintf("%s: search", strings.Join(km[keybindings.Search], "/")),
+			fmt.Sprintf("%s/%s: next/prev match", strings.Join(km[keybindings.SearchNext], ","), strings.Join(km[keybindings.SearchPrev], ",")),
 			fmt.Sprintf("%s/%s: context lines", strings.Join(km[keybindings.IncreaseContext], ","), strings.Join(km[keybindings.DecreaseContext], ",")),
 		)
 	}
@@ -196,6 +211,14 @@ type model struct {
 	editingKeybindings bool
 	kbCursor           int  // which action row is selected
 	kbCapturing        bool // waiting for a keypress to bind to the selected action
+
+	// Log search state
+	searching      bool          // capturing a search pattern from the user
+	searchText     string        // the pattern typed so far in the current input session
+	searchErr      string        // set if searchText failed to compile as a regex
+	lastSearch     regexp.Regexp // last successfully compiled search pattern
+	lastSearchText string        // raw text of lastSearch, for display (lastSearch.String() includes the (?i) prefix)
+	hasSearch      bool          // whether lastSearch is valid (n/N have something to jump to)
 
 	// Filter persistence state
 	filterFilePath string                               // where SaveFilters writes to
@@ -297,6 +320,58 @@ func (m model) updateKeybindingsScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateSearchInput handles key presses while a search pattern is being
+// typed (after pressing "/" in the Log pane): every printable rune is
+// appended to searchText, backspace removes the last one, esc cancels, and
+// enter compiles the pattern and jumps to its first match after the cursor.
+func (m model) updateSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.searching = false
+		m.searchText = ""
+		m.searchErr = ""
+
+	case "enter":
+		if m.searchText == "" {
+			m.searching = false
+			break
+		}
+		re, err := filterfiles.CompileRegex(m.searchText, false)
+		if err != nil {
+			// Stay in searching mode so the error actually renders (see
+			// renderSearchPrompt, only shown while m.searching), and leave
+			// any previously-successful search untouched so n/N still work
+			// with it after a failed retry.
+			m.searchErr = err.Error()
+			break
+		}
+		m.searching = false
+		m.searchErr = ""
+		m.lastSearch = re
+		m.lastSearchText = m.searchText
+		m.hasSearch = true
+		if idx, ok := m.log.FindNext(m.lastSearch); ok {
+			m.log.Cursor = idx
+		}
+
+	case "backspace":
+		if len(m.searchText) > 0 {
+			r := []rune(m.searchText)
+			m.searchText = string(r[:len(r)-1])
+		}
+
+	case " ":
+		m.searchText += " "
+
+	default:
+		if len(msg.Runes) > 0 {
+			m.searchText += string(msg.Runes)
+		}
+	}
+
+	return m, nil
+}
+
 // The Update method is called when "things happen".
 // It updates the model (state) in response to events.
 // Update can also return a Cmd to make more things happen.
@@ -313,6 +388,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.editingKeybindings {
 			return m.updateKeybindingsScreen(msg)
+		}
+
+		if m.searching {
+			return m.updateSearchInput(msg)
 		}
 
 		var view TableView
@@ -372,6 +451,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.editingKeybindings = true
 			m.kbCursor = 0
 			m.kbCapturing = false
+
+		case keybindings.Search:
+			m.searching = true
+			m.searchText = ""
+			m.searchErr = ""
+
+		case keybindings.SearchNext:
+			if m.hasSearch {
+				if idx, ok := m.log.FindNext(m.lastSearch); ok {
+					m.log.Cursor = idx
+				}
+			}
+
+		case keybindings.SearchPrev:
+			if m.hasSearch {
+				if idx, ok := m.log.FindPrev(m.lastSearch); ok {
+					m.log.Cursor = idx
+				}
+			}
 
 		case keybindings.NewFilter:
 			m.filters.Add()
@@ -480,7 +578,12 @@ func (m model) View() string {
 	s += m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, m.windowHeight, counts)) + "\n"
 
 	s += renderStatusLine(m) + "\n"
-	s += renderKeyBindings(m.keyMap, m.focus) + "\n"
+
+	if m.searching {
+		s += renderSearchPrompt(m) + "\n"
+	} else {
+		s += renderKeyBindings(m.keyMap, m.focus) + "\n"
+	}
 
 	// Send the UI for rendering
 	return s
