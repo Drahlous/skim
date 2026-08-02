@@ -52,7 +52,7 @@ func run(filter_file string, log_file string) {
 	defer logfile.Close()
 	scanner := bufio.NewScanner(logfile)
 
-	ui.RunUI(filters, scanner, usingStdinLog)
+	ui.RunUI(filters, scanner, filter_file, filterSettings, usingStdinLog)
 }
 
 func main() {

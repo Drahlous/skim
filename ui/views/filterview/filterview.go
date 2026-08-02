@@ -28,8 +28,12 @@ type FilterView struct {
 }
 
 // Toggle flips whichever checkbox column is currently selected for the
-// filter under the cursor.
+// filter under the cursor. It is a no-op on an empty filter list (reachable
+// after Delete removes the last remaining filter).
 func (v *FilterView) Toggle() {
+	if len(v.Filters) == 0 {
+		return
+	}
 	filter := &v.Filters[v.Cursor]
 	switch v.Column {
 	case EnabledColumn:
@@ -90,6 +94,80 @@ func (v *FilterView) UpdateRegexText(index int, text string) error {
 	v.Filters[index].XML.Text = text
 	v.Filters[index].Regex = regex
 	return nil
+}
+
+// defaultFilterColor is the background color given to a filter created with
+// Add, before the user has had a chance to pick one of their own (skim has
+// no in-UI color picker; picking a different color means hand-editing the
+// backColor attribute).
+const defaultFilterColor = "#CCCCCC"
+
+// Add inserts a new, disabled filter with an empty regex immediately after
+// Cursor (or at the start, if the list is currently empty), and moves Cursor
+// to it. It starts disabled so an unedited empty regex - which matches every
+// line - can't do anything until the user has had a chance to edit it.
+func (v *FilterView) Add() {
+	regex, _ := filterfiles.CompileRegex("", false)
+	f := filterfiles.Filter{
+		XML:       filterfiles.FilterXML{BackColor: strings.TrimPrefix(defaultFilterColor, "#")},
+		Regex:     regex,
+		IsEnabled: false,
+		BackColor: defaultFilterColor,
+	}
+
+	at := 0
+	if len(v.Filters) > 0 {
+		at = v.Cursor + 1
+	}
+
+	v.Filters = append(v.Filters, filterfiles.Filter{})
+	copy(v.Filters[at+1:], v.Filters[at:])
+	v.Filters[at] = f
+
+	v.Cursor = at
+	v.Column = EnabledColumn
+}
+
+// Delete removes the filter under the cursor, clamping Cursor to stay in
+// range (0 if the list becomes empty).
+func (v *FilterView) Delete() {
+	if len(v.Filters) == 0 {
+		return
+	}
+	v.Filters = append(v.Filters[:v.Cursor], v.Filters[v.Cursor+1:]...)
+	if v.Cursor > v.GetMaxCursor() {
+		v.Cursor = v.GetMaxCursor()
+	}
+	if v.Cursor < 0 {
+		v.Cursor = 0
+	}
+}
+
+// MoveUp swaps the filter under the cursor with the one above it, moving
+// Cursor along with it. Filter order determines highlighting precedence
+// (see filterfiles.GetMatchingFilter), so this changes which filter "wins"
+// on lines more than one filter would otherwise match. No-op at the top of
+// the list; the returned bool reports whether a swap actually happened, so
+// callers can tell a real move from a no-op (e.g. to avoid marking state
+// dirty when nothing changed).
+func (v *FilterView) MoveUp() bool {
+	if v.Cursor <= 0 || v.Cursor >= len(v.Filters) {
+		return false
+	}
+	v.Filters[v.Cursor-1], v.Filters[v.Cursor] = v.Filters[v.Cursor], v.Filters[v.Cursor-1]
+	v.Cursor--
+	return true
+}
+
+// MoveDown is MoveUp in the other direction: no-op (returns false) at the
+// bottom of the list.
+func (v *FilterView) MoveDown() bool {
+	if v.Cursor < 0 || v.Cursor >= len(v.Filters)-1 {
+		return false
+	}
+	v.Filters[v.Cursor+1], v.Filters[v.Cursor] = v.Filters[v.Cursor], v.Filters[v.Cursor+1]
+	v.Cursor++
+	return true
 }
 
 var filterStyle = lipgloss.NewStyle().
