@@ -77,7 +77,7 @@ func renderStatusLine(m model) string {
 	}
 
 	total := len(m.log.Lines)
-	shown := len(m.log.Table.Rows())
+	shown := m.log.ShownCount
 
 	line := fmt.Sprintf("hide unmatched: %s  |  showing %d/%d lines", hideState, shown, total)
 	if total > 0 {
