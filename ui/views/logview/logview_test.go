@@ -358,6 +358,92 @@ func TestMakeTableContextLinesIncludesUnmatchedNeighborContent(t *testing.T) {
 	}
 }
 
+func TestMatchCacheReusedWhenFiltersUnchanged(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "^debug", "#87CEFA")}
+	v := LogView{Lines: []string{"debug: one", "info: two"}}
+
+	v.MakeTable(100, 30, filters, true, 0)
+	first := v.matchCache
+
+	v.MakeTable(100, 30, filters, true, 0)
+	second := v.matchCache
+
+	if len(first) == 0 || &first[0] != &second[0] {
+		t.Error("matchCache was rebuilt even though the filter set didn't change")
+	}
+}
+
+func TestMatchCacheInvalidatesWhenFilterRegexChanges(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "^debug", "#87CEFA")}
+	v := LogView{Lines: []string{"debug: one", "info: two"}}
+
+	table := v.MakeTable(100, 30, filters, true, 0)
+	if rows := table.Rows(); len(rows) != 1 || !strings.Contains(rows[0][1], "debug") {
+		t.Fatalf("precondition: got rows %v, want just the debug line", rows)
+	}
+
+	filters[0] = mustFilter(t, "^info", "#87CEFA")
+	table = v.MakeTable(100, 30, filters, true, 0)
+	rows := table.Rows()
+	if len(rows) != 1 || !strings.Contains(rows[0][1], "info") {
+		t.Errorf("cache was not invalidated after the filter's regex changed: rows = %v", rows)
+	}
+}
+
+func TestMatchCacheInvalidatesWhenFilterEnabledToggles(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "^debug", "#87CEFA")}
+	v := LogView{Lines: []string{"debug: one", "info: two"}}
+
+	v.MakeTable(100, 30, filters, true, 0)
+
+	filters[0].IsEnabled = false
+	table := v.MakeTable(100, 30, filters, true, 0)
+	if rows := table.Rows(); len(rows) != 0 {
+		t.Errorf("got %d rows after disabling the only filter, want 0: %v", len(rows), rows)
+	}
+}
+
+func TestMatchCountsMatchesCountMatches(t *testing.T) {
+	filters := []filterfiles.Filter{
+		mustFilter(t, "^debug", "#87CEFA"),
+		mustFilter(t, "^info", "#90EE90"),
+	}
+	lines := []string{"debug: one", "info: two", "debug: three", "other"}
+	v := LogView{Lines: lines}
+
+	got := v.MatchCounts(filters)
+	want := filterfiles.CountMatches(filters, lines)
+
+	if len(got) != len(want) {
+		t.Fatalf("MatchCounts() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("MatchCounts()[%d] = %d, want %d", i, got[i], want[i])
+		}
+	}
+}
+
+func TestMatchCountsCountsExcludedLinesLikeCountMatches(t *testing.T) {
+	// filterfiles.CountMatches doesn't check IsExcluded -- a line that
+	// matches both a highlighting filter and an excluding filter still
+	// counts toward the highlighting filter's total, even though it would
+	// never actually be rendered. MatchCounts must preserve that, not
+	// silently start excluding such lines from the count.
+	filters := []filterfiles.Filter{
+		mustFilter(t, "heartbeat", "#87CEFA"),
+		mustExcludingFilter(t, "heartbeat"),
+	}
+	lines := []string{"heartbeat: ok"}
+	v := LogView{Lines: lines}
+
+	got := v.MatchCounts(filters)
+	want := filterfiles.CountMatches(filters, lines)
+	if got[0] != want[0] {
+		t.Errorf("MatchCounts()[0] = %d, want %d (should match CountMatches despite the line also being excluded)", got[0], want[0])
+	}
+}
+
 func TestMakeTableExcludedLineStaysHiddenEvenAsContext(t *testing.T) {
 	// A line that would otherwise be pulled in as context around a nearby
 	// match must still be dropped if it independently matches an excluding

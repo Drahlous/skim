@@ -623,7 +623,7 @@ func (m model) View() string {
 	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
 	s += m.paneStyle(LogFocus).Render(m.log.Table.View()) + "\n"
 
-	counts := filterfiles.CountMatches(m.filters.Filters, m.log.Lines)
+	counts := m.log.MatchCounts(m.filters.Filters)
 	s += m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, m.windowHeight, counts)) + "\n"
 
 	s += renderStatusLine(m) + "\n"
