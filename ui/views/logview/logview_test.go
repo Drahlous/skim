@@ -1,6 +1,7 @@
 package logview
 
 import (
+	"fmt"
 	"regexp"
 	"skim/filterfiles"
 	"strings"
@@ -355,6 +356,103 @@ func TestMakeTableContextLinesIncludesUnmatchedNeighborContent(t *testing.T) {
 	}
 	if !strings.Contains(rows[1][1], "debug: match") {
 		t.Errorf("matched row = %v, want it to contain the matched line's text", rows[1])
+	}
+}
+
+func genLines(n int) []string {
+	lines := make([]string, n)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line %d", i+1)
+	}
+	return lines
+}
+
+func TestMakeTableWindowsRowsForLargeLogs(t *testing.T) {
+	lines := genLines(1000)
+	v := LogView{Lines: lines, Cursor: 500}
+
+	table := v.MakeTable(100, 30, nil, false, 0)
+	rows := table.Rows()
+
+	if len(rows) >= len(lines) {
+		t.Fatalf("got %d rows, want far fewer than the full %d-line log (windowing should have kicked in)", len(rows), len(lines))
+	}
+	if got := table.SelectedRow(); got[1] != "line 501" {
+		t.Errorf("SelectedRow() = %v, want the row for line 501 (Cursor=500, 1-indexed)", got)
+	}
+	if v.ShownCount != len(lines) {
+		t.Errorf("ShownCount = %d, want %d (every line, since hideUnmatched is off)", v.ShownCount, len(lines))
+	}
+}
+
+func TestMakeTableWindowNearTopOfLog(t *testing.T) {
+	lines := genLines(1000)
+	v := LogView{Lines: lines, Cursor: 0}
+
+	table := v.MakeTable(100, 30, nil, false, 0)
+	rows := table.Rows()
+
+	if len(rows) == 0 || rows[0][1] != "line 1" {
+		t.Fatalf("first windowed row = %v, want line 1 (window should start at the top when the cursor is there)", rows[0])
+	}
+	if got := table.SelectedRow(); got[1] != "line 1" {
+		t.Errorf("SelectedRow() = %v, want line 1", got)
+	}
+}
+
+func TestMakeTableWindowNearBottomOfLog(t *testing.T) {
+	lines := genLines(1000)
+	v := LogView{Lines: lines, Cursor: 999}
+
+	table := v.MakeTable(100, 30, nil, false, 0)
+	rows := table.Rows()
+
+	if len(rows) == 0 || rows[len(rows)-1][1] != "line 1000" {
+		t.Fatalf("last windowed row = %v, want line 1000 (window should end at the bottom when the cursor is there)", rows[len(rows)-1])
+	}
+	if got := table.SelectedRow(); got[1] != "line 1000" {
+		t.Errorf("SelectedRow() = %v, want line 1000", got)
+	}
+}
+
+func TestShownCountReflectsFullLogNotJustTheWindow(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "^debug", "#87CEFA")}
+	lines := make([]string, 1000)
+	for i := range lines {
+		if i%2 == 0 {
+			lines[i] = fmt.Sprintf("debug: line %d", i+1)
+		} else {
+			lines[i] = fmt.Sprintf("info: line %d", i+1)
+		}
+	}
+	v := LogView{Lines: lines, Cursor: 500}
+
+	v.MakeTable(100, 30, filters, true, 0)
+
+	if v.ShownCount != 500 {
+		t.Errorf("ShownCount = %d, want 500 (half the lines match ^debug)", v.ShownCount)
+	}
+	if len(v.Table.Rows()) >= v.ShownCount {
+		t.Errorf("got %d rows, want fewer than ShownCount (%d) -- windowing should still apply", len(v.Table.Rows()), v.ShownCount)
+	}
+}
+
+func TestMakeTableWindowedCursorSnapsToVisibleLineWhenHidden(t *testing.T) {
+	filters := []filterfiles.Filter{mustFilter(t, "keep", "#87CEFA")}
+	lines := make([]string, 1000)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("drop %d", i)
+	}
+	lines[500] = "keep this one"
+	// Cursor points at a hidden line just after the only match; it should
+	// snap to the nearest preceding visible row, same as the small-log
+	// behavior in TestMakeTableCursorRowTracksVisibleLineWhenLinesAreHidden,
+	// but exercised on a log large enough to actually trigger windowing.
+	v := LogView{Lines: lines, Cursor: 501}
+
+	table := v.MakeTable(100, 30, filters, true, 0)
+	if got := table.SelectedRow(); got[1] != "keep this one" {
+		t.Errorf("SelectedRow() = %v, want the only visible line", got)
 	}
 }
 

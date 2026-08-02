@@ -14,6 +14,14 @@ type LogView struct {
 	Table  table.Model
 	Lines  []string
 
+	// ShownCount is the total number of lines MakeTable's last call
+	// considered "shown" (matched, not excluded), across the whole log --
+	// not just the ones actually turned into table.Rows (see MakeTable's
+	// windowing). Callers that want an accurate "N of M lines shown" count
+	// (e.g. the status line) should read this rather than
+	// len(Table.Rows()), which only reflects the rendered window.
+	ShownCount int
+
 	// matchCache holds, for each line in Lines (same index), whether it's
 	// excluded and which filter (if any) wins its highlight -- computed by
 	// ensureMatchCache and reused across calls until the filter set
@@ -196,6 +204,30 @@ func shownLines(cache []matchState, hideUnmatched bool, contextLines int) []bool
 	return shown
 }
 
+// buildRow formats and, if the line has a highlighting match, styles a
+// single line into the table.Row bubbles/table will render.
+func buildRow(i int, line string, ms matchState, filters []filterfiles.Filter) table.Row {
+	lineNumber := i + 1
+	line = strings.ReplaceAll(line, "\t", "    ")
+
+	if ms.filterIndex >= 0 {
+		style := logStyle
+		style.Background(lipgloss.Color(filters[ms.filterIndex].BackColor))
+		return table.Row{fmt.Sprintf("%d", lineNumber), style.Render(line)}
+	}
+	return table.Row{fmt.Sprintf("%d", lineNumber), line}
+}
+
+func clamp(v, low, high int) int {
+	if v < low {
+		return low
+	}
+	if v > high {
+		return high
+	}
+	return v
+}
+
 func (v *LogView) MakeTable(windowWidth int, windowHeight int, filters []filterfiles.Filter, hideUnmatched bool, contextLines int) table.Model {
 	columns := []table.Column{
 		{Title: "#", Width: 4},
@@ -203,67 +235,66 @@ func (v *LogView) MakeTable(windowWidth int, windowHeight int, filters []filterf
 	}
 
 	v.ensureMatchCache(filters)
-
-	rows := []table.Row{}
 	shown := shownLines(v.matchCache, hideUnmatched, contextLines)
 
-	// cursorRow tracks the position, within the visible rows actually
-	// rendered, of the last row at or before v.Cursor's line index. v.Cursor
-	// indexes into the full (unfiltered) line set, so when hideUnmatched
-	// drops lines, a raw row-count of v.Cursor would overshoot; this keeps
-	// the highlighted row aligned with the log line the cursor logically
-	// points at, even when lines before it are hidden.
+	// bubbles/table's own UpdateViewport only ever renders rows in
+	// [cursor-height, cursor+height] (see its renderRow/UpdateViewport) --
+	// building a fully formatted/styled table.Row for every shown line in
+	// the whole log, only for almost all of them to never actually be
+	// joined into the rendered output, is wasted work that scales with the
+	// log's size instead of the terminal's. So first make a cheap pass
+	// (cache lookups only, no formatting) to find cursorRow -- the
+	// position, among shown/non-excluded lines, of the last such line at or
+	// before v.Cursor -- and shownCount, the total such lines in the whole
+	// log (needed for status-line reporting, since Table.Rows() will no
+	// longer reflect it once windowed).
+	shownCount := 0
 	cursorRow := 0
-
-	for i, line := range v.Lines {
-		if !shown[i] {
+	for i := range v.Lines {
+		if !shown[i] || v.matchCache[i].excluded {
 			continue
 		}
-
-		// +1 Offset to make the first line number 1
-		lineNumber := i + 1
-
-		// Replace tabs with spaces
-		line = strings.ReplaceAll(line, "\t", "    ")
-
-		ms := v.matchCache[i]
-
-		// A line matching an enabled excluding filter is always hidden,
-		// regardless of hideUnmatched, context radius, or whether it would
-		// otherwise match a highlighting filter or be pulled in as context
-		// around a nearby match.
-		if ms.excluded {
-			continue
-		}
-
-		// Do any filters match this line? Lines shown only as context around
-		// a match (or because hideUnmatched is off) render plainly.
-		var row table.Row
-		if ms.filterIndex >= 0 {
-			// Style this log line with the color from the filter
-			style := logStyle
-			style.Background(lipgloss.Color(filters[ms.filterIndex].BackColor))
-			row = table.Row{fmt.Sprintf("%d", lineNumber), style.Render(line)}
-		} else {
-			row = table.Row{fmt.Sprintf("%d", lineNumber), line}
-		}
-		rows = append(rows, row)
-
 		if i <= v.Cursor {
-			cursorRow = len(rows) - 1
+			cursorRow = shownCount
 		}
+		shownCount++
+	}
+	v.ShownCount = shownCount
+
+	// TODO: Replace hardcoded offset with the size of the filter section
+	height := windowHeight - 12
+	if height < 1 {
+		height = 1
+	}
+	start := clamp(cursorRow-height, 0, cursorRow)
+	end := clamp(cursorRow+height, cursorRow, shownCount)
+
+	rows := make([]table.Row, 0, end-start)
+	rowPos := 0
+	for i, line := range v.Lines {
+		if !shown[i] || v.matchCache[i].excluded {
+			continue
+		}
+		if rowPos >= end {
+			break
+		}
+		if rowPos >= start {
+			rows = append(rows, buildRow(i, line, v.matchCache[i], filters))
+		}
+		rowPos++
 	}
 
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithRows(rows),
 		table.WithFocused(true),
-		// TODO: Replace hardcoded offset with the size of the filter section
-		table.WithHeight(windowHeight-12),
+		table.WithHeight(height),
 	)
 
-	// Move the view to the visible row corresponding to the log cursor
-	t.MoveDown(cursorRow)
+	// cursorRow was computed relative to the full shown set; rows only
+	// covers [start, end), so re-anchor it to the window before handing it
+	// to the table.
+	t.MoveDown(cursorRow - start)
 
 	v.Table = t
 	return t
