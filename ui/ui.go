@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"regexp"
 	"skim/filterfiles"
 	"skim/keybindings"
@@ -154,7 +153,7 @@ func renderKeyBindings(km keybindings.KeyMap, focus Focus, width int) string {
 	switch focus {
 	case FilterFocus:
 		parts = append(parts,
-			fmt.Sprintf("%s: edit regex", strings.Join(km[keybindings.EditRegex], "/")),
+			fmt.Sprintf("%s: edit filter", strings.Join(km[keybindings.EditRegex], "/")),
 			fmt.Sprintf("%s/%s: move column", strings.Join(km[keybindings.CursorLeft], ","), strings.Join(km[keybindings.CursorRight], ",")),
 			fmt.Sprintf("%s: new filter", strings.Join(km[keybindings.NewFilter], "/")),
 			fmt.Sprintf("%s: delete filter", strings.Join(km[keybindings.DeleteFilter], "/")),
@@ -218,44 +217,6 @@ func packKeyBindings(parts []string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// editorFinishedMsg is sent once the external $EDITOR process invoked to
-// edit a filter's regex text has exited.
-type editorFinishedMsg struct {
-	err      error
-	tempFile string
-	index    int
-}
-
-// openRegexEditorCmd writes the filter's current regex text to a temp file
-// and opens it in the user's $EDITOR (falling back to "vi"), suspending the
-// UI while the editor runs.
-func openRegexEditorCmd(index int, initialText string) tea.Cmd {
-	tmpFile, err := os.CreateTemp("", "skim-regex-*.txt")
-	if err != nil {
-		return func() tea.Msg {
-			return editorFinishedMsg{err: err}
-		}
-	}
-
-	if _, err := tmpFile.WriteString(initialText); err != nil {
-		tmpFile.Close()
-		return func() tea.Msg {
-			return editorFinishedMsg{err: err}
-		}
-	}
-	tmpFile.Close()
-
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vi"
-	}
-
-	c := exec.Command(editor, tmpFile.Name())
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return editorFinishedMsg{err: err, tempFile: tmpFile.Name(), index: index}
-	})
-}
-
 // Model to store the application's state
 type model struct {
 	log           logview.LogView
@@ -274,6 +235,11 @@ type model struct {
 	kbKeyCursor        int  // which of the selected action's keys is selected (left/right, "d" targets this one)
 	kbCapturing        bool // waiting for a keypress to bind to the selected action
 	kbAppending        bool // while kbCapturing: whether the captured key is added to the existing keys ("a") rather than replacing them ("enter")
+
+	// Filter editor screen state (see filtereditor.go, colorpicker.go).
+	// Always edits m.filters.Filters[m.filters.Cursor].
+	editingFilter bool
+	filterEditor  filterEditorState
 
 	// Log search state
 	searching      bool          // capturing a search pattern from the user
@@ -565,6 +531,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateKeybindingsScreen(msg)
 		}
 
+		if m.editingFilter {
+			return m.updateFilterEditor(msg)
+		}
+
 		if m.searching {
 			return m.updateSearchInput(msg)
 		}
@@ -620,10 +590,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.hideUnmatched = !m.hideUnmatched
 
 		case keybindings.EditRegex:
-			// Edit the selected filter's regex in $EDITOR
 			if len(m.filters.Filters) > 0 {
-				selected := m.filters.Filters[m.filters.Cursor]
-				return m, openRegexEditorCmd(m.filters.Cursor, selected.XML.Text)
+				m.editingFilter = true
+				m.filterEditor = filterEditorState{}
 			}
 
 		case keybindings.OpenKeybindingsScreen:
@@ -656,7 +625,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filters.Add()
 			m.filtersDirty = true
 			m.saveStatus = ""
-			return m, openRegexEditorCmd(m.filters.Cursor, "")
+			m.editingFilter = true
+			m.filterEditor = filterEditorState{}
 
 		case keybindings.DeleteFilter:
 			if len(m.filters.Filters) > 0 {
@@ -711,6 +681,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.MouseMsg:
+		if m.editingFilter {
+			if m.filterEditor.colorPicker.open {
+				return m.updateColorPickerMouse(msg)
+			}
+			break
+		}
+
 		// Scrolling while a modal input (keybindings editor or search) is
 		// capturing keystrokes has no sensible target, so ignore it rather
 		// than silently moving a cursor the user can't currently see move.
@@ -732,18 +709,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			view.CursorDown()
 		}
 
-	case editorFinishedMsg:
+	case filterFieldEditorFinishedMsg:
 		if msg.tempFile != "" {
 			defer os.Remove(msg.tempFile)
 		}
 		if msg.err == nil {
 			content, err := os.ReadFile(msg.tempFile)
 			if err == nil {
-				newText := strings.TrimRight(string(content), "\n")
-				if err := m.filters.UpdateRegexText(msg.index, newText); err == nil {
-					m.filtersDirty = true
-					m.saveStatus = ""
-				}
+				m.filterEditor.textBuf = strings.TrimRight(string(content), "\n")
+				m.commitFilterEditorTextField()
 			}
 		}
 		// Bubble Tea's ExecProcess hands the real terminal to $EDITOR and
@@ -825,6 +799,10 @@ func (m model) View() string {
 
 	if m.editingKeybindings {
 		return m.renderKeybindingsScreen()
+	}
+
+	if m.editingFilter {
+		return m.renderFilterEditor()
 	}
 
 	var footer string

@@ -68,7 +68,7 @@ var Registry = []Spec{
 	{Toggle, ScopeGlobal, "toggle selection", []string{"enter", " "}},
 	{SwitchFocus, ScopeGlobal, "switch focus", []string{"tab"}},
 	{ToggleHideUnmatched, ScopeLogView, "hide unmatched lines", []string{"h"}},
-	{EditRegex, ScopeFilterView, "edit regex in $EDITOR", []string{"i"}},
+	{EditRegex, ScopeFilterView, "edit filter", []string{"i"}},
 	{OpenKeybindingsScreen, ScopeGlobal, "edit keybindings", []string{"K"}},
 	{Search, ScopeLogView, "search log", []string{"/"}},
 	{SearchNext, ScopeLogView, "jump to next match", []string{"n"}},

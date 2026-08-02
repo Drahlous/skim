@@ -9,7 +9,7 @@ Set Theme "Dracula"
 Set TypingSpeed 50ms
 
 Hide
-Type "export EDITOR=vi && clear"
+Type "clear"
 Enter
 Show
 

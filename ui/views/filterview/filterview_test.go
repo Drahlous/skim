@@ -76,10 +76,16 @@ func TestCursorLeftRightClampsToColumnRange(t *testing.T) {
 	if got := v.CursorRight(); got != int(CaseSensitiveColumn) {
 		t.Errorf("CursorRight() = %d, want %d", got, CaseSensitiveColumn)
 	}
-	if got := v.CursorRight(); got != int(CaseSensitiveColumn) {
-		t.Errorf("CursorRight() past the end = %d, want %d (should clamp)", got, CaseSensitiveColumn)
+	if got := v.CursorRight(); got != int(ExcludingColumn) {
+		t.Errorf("CursorRight() = %d, want %d", got, ExcludingColumn)
+	}
+	if got := v.CursorRight(); got != int(ExcludingColumn) {
+		t.Errorf("CursorRight() past the end = %d, want %d (should clamp)", got, ExcludingColumn)
 	}
 
+	if got := v.CursorLeft(); got != int(CaseSensitiveColumn) {
+		t.Errorf("CursorLeft() back = %d, want %d", got, CaseSensitiveColumn)
+	}
 	if got := v.CursorLeft(); got != int(EnabledColumn) {
 		t.Errorf("CursorLeft() back = %d, want %d", got, EnabledColumn)
 	}
@@ -133,63 +139,20 @@ func TestToggleCaseSensitiveColumnRecompilesRegex(t *testing.T) {
 	}
 }
 
-func TestUpdateRegexText(t *testing.T) {
+func TestToggleExcludingColumn(t *testing.T) {
 	v := FilterView{
-		Filters: []filterfiles.Filter{mustFilter(t, "hello", false, true, "#000000")},
+		Filters: []filterfiles.Filter{mustFilter(t, "heartbeat", false, true, "#000000")},
+		Column:  ExcludingColumn,
 	}
 
-	if err := v.UpdateRegexText(0, "goodbye"); err != nil {
-		t.Fatalf("UpdateRegexText returned unexpected error: %v", err)
-	}
-	if v.Filters[0].XML.Text != "goodbye" {
-		t.Errorf("XML.Text = %q, want %q", v.Filters[0].XML.Text, "goodbye")
-	}
-	if !v.Filters[0].Regex.MatchString("goodbye world") {
-		t.Error("recompiled regex does not match the new text")
-	}
-	if v.Filters[0].Regex.MatchString("hello world") {
-		t.Error("recompiled regex still matches the old text")
-	}
-}
-
-func TestUpdateRegexTextPreservesCaseSensitivity(t *testing.T) {
-	v := FilterView{
-		Filters: []filterfiles.Filter{mustFilter(t, "hello", true, true, "#000000")},
+	v.Toggle()
+	if !v.Filters[0].Excluding {
+		t.Error("Excluding = false after Toggle, want true")
 	}
 
-	if err := v.UpdateRegexText(0, "Hello"); err != nil {
-		t.Fatalf("UpdateRegexText returned unexpected error: %v", err)
-	}
-	if v.Filters[0].Regex.MatchString("HELLO") {
-		t.Error("regex should remain case-sensitive after UpdateRegexText")
-	}
-	if !v.Filters[0].Regex.MatchString("Hello") {
-		t.Error("regex should match the exact-case new text")
-	}
-}
-
-func TestUpdateRegexTextInvalidRegexLeavesFilterUnchanged(t *testing.T) {
-	v := FilterView{
-		Filters: []filterfiles.Filter{mustFilter(t, "hello", false, true, "#000000")},
-	}
-
-	err := v.UpdateRegexText(0, "([unclosed")
-	if err == nil {
-		t.Fatal("UpdateRegexText with invalid regex returned no error")
-	}
-	if v.Filters[0].XML.Text != "hello" {
-		t.Errorf("XML.Text = %q after failed update, want unchanged %q", v.Filters[0].XML.Text, "hello")
-	}
-}
-
-func TestUpdateRegexTextOutOfRange(t *testing.T) {
-	v := FilterView{Filters: []filterfiles.Filter{mustFilter(t, "hello", false, true, "#000000")}}
-
-	if err := v.UpdateRegexText(5, "goodbye"); err == nil {
-		t.Fatal("UpdateRegexText with out-of-range index returned no error")
-	}
-	if err := v.UpdateRegexText(-1, "goodbye"); err == nil {
-		t.Fatal("UpdateRegexText with negative index returned no error")
+	v.Toggle()
+	if v.Filters[0].Excluding {
+		t.Error("Excluding = true after second Toggle, want false")
 	}
 }
 
@@ -428,8 +391,8 @@ func TestRenderMovesSelectionWithColumn(t *testing.T) {
 	if !strings.HasPrefix(row, "[x]") {
 		t.Errorf("expected the (unselected) enabled checkbox first in the row, got: %q", row)
 	}
-	if !strings.HasSuffix(strings.TrimRight(row, " "), "{ }") {
-		t.Errorf("expected the selected case-sensitivity checkbox last in the row as { }, got: %q", row)
+	if !strings.Contains(row, "{ }") {
+		t.Errorf("expected the selected case-sensitivity checkbox to render as { }, got: %q", row)
 	}
 }
 
@@ -446,12 +409,29 @@ func TestRenderMarksExcludingFilters(t *testing.T) {
 	}
 
 	out := v.Render(120, 30, nil)
-
-	if !strings.Contains(out, "! heartbeat") {
-		t.Errorf("expected the excluding filter's regex to be marked with \"! \", got:\n%s", out)
+	lines := strings.Split(out, "\n")
+	if len(lines) < 3 {
+		t.Fatalf("expected a header and two rows, got %d lines", len(lines))
 	}
-	if strings.Contains(out, "! ERROR") {
-		t.Errorf("non-excluding filter should not be marked, got:\n%s", out)
+
+	if !strings.HasSuffix(strings.TrimRight(lines[1], " "), "[x]") {
+		t.Errorf("expected the excluding filter's row to end with a checked Excl checkbox, got: %q", lines[1])
+	}
+	if !strings.HasSuffix(strings.TrimRight(lines[2], " "), "[ ]") {
+		t.Errorf("expected the non-excluding filter's row to end with an unchecked Excl checkbox, got: %q", lines[2])
+	}
+}
+
+func TestRenderShowsDescription(t *testing.T) {
+	f := mustFilter(t, "heartbeat", false, true, "#000000")
+	f.XML.Description = "noisy health checks"
+
+	v := FilterView{Filters: []filterfiles.Filter{f}}
+
+	out := v.Render(120, 30, nil)
+
+	if !strings.Contains(out, "noisy health checks") {
+		t.Errorf("expected the filter's description in output, got:\n%s", out)
 	}
 }
 

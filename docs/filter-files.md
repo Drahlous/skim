@@ -22,16 +22,17 @@ Every `<filter>` is a single row in the Filters pane, in file order. **Order mat
 | --- | --- |
 | `enabled` | `"y"` or `"n"`. Disabled filters never match, and (with hide-unmatched on) their lines are hidden along with everything else unmatched. Toggle live with `enter`/`space` in the Filters pane. |
 | `case_sensitive` | `"y"` or `"n"`. When `"n"` (the default), the regex is compiled with an `(?i)` case-insensitive flag. Toggle live with the case-sensitivity checkbox in the Filters pane. |
-| `excluding` | `"y"` or `"n"`. A matching line from an enabled `excluding="y"` filter is **always hidden** — regardless of `hide unmatched`, and regardless of whether the line would otherwise match a highlighting filter. Use it for noise you never want to see (health checks, heartbeats) rather than relying on hide-unmatched, which only hides lines that match *nothing*. In the Filters pane, an excluding filter's regex is prefixed with `! ` so it isn't mistaken for a highlighting filter that just never matches. |
-| `backColor` | A 6-digit hex color **without** a leading `#` (e.g. `87cefa`, not `#87cefa`), applied as the background of any log line that matches. Excluded lines are never shown, so `backColor` has no effect on the *log*, but it's still required and still applied to the filter's own row in the Filters pane — where the row text (including the `! ` exclusion marker) renders in black. Avoid a dark `backColor` like `000000` on an excluding filter, or its row becomes unreadable. |
-| `text` | The regex pattern to match against each log line. Go's [`regexp` syntax](https://pkg.go.dev/regexp/syntax) (RE2) applies — not .NET regex syntax, even though the file format comes from a .NET tool. Edit live with `i` in the Filters pane. |
+| `excluding` | `"y"` or `"n"`. A matching line from an enabled `excluding="y"` filter is **always hidden** — regardless of `hide unmatched`, and regardless of whether the line would otherwise match a highlighting filter. Use it for noise you never want to see (health checks, heartbeats) rather than relying on hide-unmatched, which only hides lines that match *nothing*. The Filters pane shows it as its own **Excl** checkbox column, toggleable directly with `left`/`right`/`enter` (like case sensitivity) or from the **Excluding** field in the filter editor (`i`). |
+| `backColor` | A 6-digit hex color **without** a leading `#` (e.g. `87cefa`, not `#87cefa`), applied as the background of any log line that matches. Excluded lines are never shown, so `backColor` has no effect on the *log*, but it's still required and still applied to the filter's own row in the Filters pane, where the regex text renders in black. Avoid a dark `backColor` like `000000` on an excluding filter, or its row becomes unreadable. Set it live from the **Color** field in the filter editor, which opens a swatch picker (mouse or arrow keys) plus a custom hex entry (`c`). |
+| `text` | The regex pattern to match against each log line. Go's [`regexp` syntax](https://pkg.go.dev/regexp/syntax) (RE2) applies — not .NET regex syntax, even though the file format comes from a .NET tool. Edit live from the **Regex** field in the filter editor (`i` in the Filters pane); `ctrl+e` drops into `$EDITOR` for more room. |
+| `description` | A free-text label for the filter, shown in its own column in the Filters pane. Edit live from the **Description** field in the filter editor (also `ctrl+e`-editable in `$EDITOR`). |
 
 ## Attributes kept for TAT compatibility, not currently acted on
 
 These are parsed from the file and preserved if you round-trip it, but skim doesn't change behavior based on them today:
 
 - `regex` — in TAT this toggles whether `text` is treated as a literal string or a regex. skim always compiles `text` as a regex.
-- `description`, `type` — carried through, not displayed or used anywhere in skim's UI.
+- `type` — carried through, not displayed or used anywhere in skim's UI.
 
 ## Writing filters
 
@@ -45,7 +46,7 @@ You can hand-write a `.tat` file with any text editor, build one from scratch en
      </filters>
    </TextAnalysisTool.NET>
    ```
-2. `tab` to the Filters pane. Press `a` to insert a new, disabled filter after the cursor — this immediately opens its regex text in `$EDITOR`; save and quit to set it. Press `i` on any row (new or existing) to edit its regex the same way at any time.
+2. `tab` to the Filters pane. Press `a` to insert a new, disabled filter after the cursor — this immediately opens the filter editor for it. Press `i` on any row (new or existing) to open the same editor at any time; it has one field per attribute (description, regex, case sensitivity, exclusion, enabled, color), see [keybindings](./keybindings.md) for the full in-editor controls.
 3. Press `enter`/`space` on the enabled checkbox to turn a filter on and see it take effect in the Log pane.
 4. Press `d` to delete the filter under the cursor, or `[`/`]` to move it up/down — reordering changes which filter "wins" on lines more than one would otherwise match (see [order matters](#file-structure) above).
 5. Repeat, watching `showing X/Y lines` in the status line as a signal for whether a regex is too broad or too narrow.
