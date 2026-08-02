@@ -410,8 +410,17 @@ func (m model) View() string {
 }
 
 // Run the program by passing the initial model to tea.NewProgram, then run
-func RunUI(filters []filterfiles.Filter, scanner *bufio.Scanner) {
-	p := tea.NewProgram(initialModel(filters, scanner), tea.WithAltScreen())
+func RunUI(filters []filterfiles.Filter, scanner *bufio.Scanner, usingStdinLog bool) {
+	opts := []tea.ProgramOption{tea.WithAltScreen()}
+	if usingStdinLog {
+		// The log's bufio.Scanner has already fully drained stdin above, so
+		// stdin itself is no longer usable for keyboard input (and may not
+		// have been a terminal in the first place). Read keypresses from the
+		// controlling TTY instead.
+		opts = append(opts, tea.WithInputTTY())
+	}
+
+	p := tea.NewProgram(initialModel(filters, scanner), opts...)
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("An error occured: %v", err)
 		os.Exit(1)

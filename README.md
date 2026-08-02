@@ -67,6 +67,12 @@ Usage of skim:
         supply the path to the input log file (default "./examples/simple_longer.log")
 ```
 
+`-log -` reads the log from stdin instead of a file, so skim can sit at the end of a pipeline:
+
+```sh
+kubectl logs -f my-pod | skim -log - -filter <path/to/filters.tat>
+```
+
 ## Documentation
 
 - **[Getting started](./docs/getting-started.md)** — the two panes, moving around, and the core hide/show workflow
