@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1655,6 +1656,48 @@ func TestViewTotalHeightStaysWithinWindowWhenHelpExpands(t *testing.T) {
 
 	if expandedLines > m.windowHeight {
 		t.Errorf("expanded View() has %d lines, exceeds windowHeight %d (collapsed had %d)", expandedLines, m.windowHeight, collapsedLines)
+	}
+}
+
+// TestViewTotalHeightStaysWithinWindowInDefaultState guards against the
+// same class of bug as TestViewTotalHeightStaysWithinWindowWhenHelpExpands,
+// but for the ordinary collapsed-help state that's active almost all the
+// time -- that test only ever checked the *expanded* case, so it missed a
+// bug where View() joined its four blocks (log pane, filter pane, status
+// line, footer) with a trailing "\n" after every one of them, including the
+// last. That's one separator too many: with 4 blocks that should need only
+// 3 separators to join, the extra trailing newline added a blank line that
+// Bubble Tea's line-count-based height check still counts as real screen
+// space, pushing the total one line past windowHeight even in the default,
+// unexpanded state. Once a frame is taller than the terminal, Bubble Tea
+// has to drop/shift lines it can't scroll back to, permanently desyncing
+// its line-by-line diff -- which is what caused some rows to stop visually
+// updating on cursor movement (confirmed against a live terminal via tmux;
+// not reproducible by comparing View()'s output as plain strings, since
+// that never exercises Bubble Tea's stateful renderer) even though View()
+// itself was computing the right content every time.
+func TestViewTotalHeightStaysWithinWindowInDefaultState(t *testing.T) {
+	numLines := func(out string) int { return len(strings.Split(out, "\n")) }
+
+	filters := []filterfiles.Filter{
+		mustFilter(t, "^debug"),
+		mustFilter(t, "^info"),
+		mustFilter(t, "^warn"),
+		mustFilter(t, "^error"),
+	}
+	var b strings.Builder
+	for i := 0; i < 500; i++ {
+		fmt.Fprintf(&b, "debug: line %d\n", i)
+	}
+
+	for _, size := range []struct{ w, h int }{{165, 40}, {200, 50}, {120, 25}} {
+		m := newTestModel(t, filters, b.String())
+		newModel, _ := m.Update(tea.WindowSizeMsg{Width: size.w, Height: size.h})
+		m = newModel.(model)
+
+		if got := numLines(m.View()); got > m.windowHeight {
+			t.Errorf("size %dx%d: View() has %d lines, exceeds windowHeight %d", size.w, size.h, got, m.windowHeight)
+		}
 	}
 }
 

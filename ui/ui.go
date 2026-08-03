@@ -835,17 +835,24 @@ func (m model) View() string {
 	footerExtraLines := strings.Count(footer, "\n")
 	tableHeight := m.windowHeight - footerExtraLines
 
-	s := ""
-
 	// Make table of filtered log lines
 	m.log.MakeTable(m.windowWidth, tableHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
-	s += m.paneStyle(LogFocus).Render(m.log.Table.View()) + "\n"
+	logBlock := m.paneStyle(LogFocus).Render(m.log.Table.View())
 
 	counts := m.log.MatchCounts(m.filters.Filters)
-	s += m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, tableHeight, counts)) + "\n"
+	filterBlock := m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, tableHeight, counts))
 
-	s += renderStatusLine(m) + "\n"
-	s += footer + "\n"
+	// Joined with "\n" rather than each piece getting its own trailing
+	// "\n" (which would add a blank line after the footer that Bubble
+	// Tea's line-count-based height check counts as real screen real
+	// estate): with four blocks, that's one separator too many, pushing
+	// the total past windowHeight by exactly one line. Once the rendered
+	// frame is taller than the terminal, Bubble Tea has to drop/shift
+	// lines it can't scroll back to, permanently desyncing its
+	// line-by-line diff -- which shows up as some rows silently no
+	// longer updating on cursor movement, even though View() itself is
+	// computing the right content every time.
+	s := strings.Join([]string{logBlock, filterBlock, renderStatusLine(m), footer}, "\n")
 
 	// Send the UI for rendering
 	return s
