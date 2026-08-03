@@ -219,7 +219,14 @@ func packKeyBindings(parts []string, width int) string {
 
 // Model to store the application's state
 type model struct {
-	log           logview.LogView
+	// log is a pointer, unlike filters, because View() has a value
+	// receiver: every render works on a fresh copy of model, and a value
+	// field's mutations (LogView's per-render match/shown/count caches)
+	// would vanish with that copy instead of surviving to the next render.
+	// A pointer field copies the pointer, not the LogView it points to, so
+	// the cache -- and the O(window) instead of O(lines) work it buys --
+	// actually persists across renders.
+	log           *logview.LogView
 	filters       filterview.FilterView
 	focus         Focus // which view is currently in focus
 	windowWidth   int
@@ -298,7 +305,7 @@ func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFi
 			Filters: filters,
 			Cursor:  0,
 		},
-		log: logview.LogView{
+		log: &logview.LogView{
 			Lines:  lines,
 			Cursor: 0,
 		},
@@ -546,7 +553,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var view TableView
 
 		if m.focus == LogFocus {
-			view = &m.log
+			view = m.log
 		} else if m.focus == FilterFocus {
 			view = &m.filters
 		}
@@ -697,7 +704,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		var view TableView
 		if m.focus == LogFocus {
-			view = &m.log
+			view = m.log
 		} else if m.focus == FilterFocus {
 			view = &m.filters
 		}
@@ -828,17 +835,24 @@ func (m model) View() string {
 	footerExtraLines := strings.Count(footer, "\n")
 	tableHeight := m.windowHeight - footerExtraLines
 
-	s := ""
-
 	// Make table of filtered log lines
 	m.log.MakeTable(m.windowWidth, tableHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
-	s += m.paneStyle(LogFocus).Render(m.log.Table.View()) + "\n"
+	logBlock := m.paneStyle(LogFocus).Render(m.log.Table.View())
 
 	counts := m.log.MatchCounts(m.filters.Filters)
-	s += m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, tableHeight, counts)) + "\n"
+	filterBlock := m.paneStyle(FilterFocus).Render(m.filters.Render(m.windowWidth, tableHeight, counts))
 
-	s += renderStatusLine(m) + "\n"
-	s += footer + "\n"
+	// Joined with "\n" rather than each piece getting its own trailing
+	// "\n" (which would add a blank line after the footer that Bubble
+	// Tea's line-count-based height check counts as real screen real
+	// estate): with four blocks, that's one separator too many, pushing
+	// the total past windowHeight by exactly one line. Once the rendered
+	// frame is taller than the terminal, Bubble Tea has to drop/shift
+	// lines it can't scroll back to, permanently desyncing its
+	// line-by-line diff -- which shows up as some rows silently no
+	// longer updating on cursor movement, even though View() itself is
+	// computing the right content every time.
+	s := strings.Join([]string{logBlock, filterBlock, renderStatusLine(m), footer}, "\n")
 
 	// Send the UI for rendering
 	return s
