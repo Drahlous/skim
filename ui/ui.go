@@ -219,7 +219,14 @@ func packKeyBindings(parts []string, width int) string {
 
 // Model to store the application's state
 type model struct {
-	log           logview.LogView
+	// log is a pointer, unlike filters, because View() has a value
+	// receiver: every render works on a fresh copy of model, and a value
+	// field's mutations (LogView's per-render match/shown/count caches)
+	// would vanish with that copy instead of surviving to the next render.
+	// A pointer field copies the pointer, not the LogView it points to, so
+	// the cache -- and the O(window) instead of O(lines) work it buys --
+	// actually persists across renders.
+	log           *logview.LogView
 	filters       filterview.FilterView
 	focus         Focus // which view is currently in focus
 	windowWidth   int
@@ -298,7 +305,7 @@ func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFi
 			Filters: filters,
 			Cursor:  0,
 		},
-		log: logview.LogView{
+		log: &logview.LogView{
 			Lines:  lines,
 			Cursor: 0,
 		},
@@ -546,7 +553,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var view TableView
 
 		if m.focus == LogFocus {
-			view = &m.log
+			view = m.log
 		} else if m.focus == FilterFocus {
 			view = &m.filters
 		}
@@ -697,7 +704,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		var view TableView
 		if m.focus == LogFocus {
-			view = &m.log
+			view = m.log
 		} else if m.focus == FilterFocus {
 			view = &m.filters
 		}

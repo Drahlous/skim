@@ -6,6 +6,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"regexp"
 	"skim/filterfiles"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -30,6 +32,24 @@ type LogView struct {
 	// regex against every line.
 	matchCache    []matchState
 	matchCacheKey string
+
+	// matchCounts and matchCountsKey cache MatchCounts' result under the
+	// same fingerprint as matchCache, so a repeated call (MatchCounts is
+	// invoked on every render, not just when filters change) is an O(1)
+	// copy instead of re-tallying all of matchCache from scratch.
+	matchCounts    []int
+	matchCountsKey string
+
+	// shownIndices holds the indices (into Lines, ascending) of every line
+	// that is currently shown (per hideUnmatched/contextLines) and not
+	// excluded -- i.e. exactly the lines MakeTable would otherwise have to
+	// rediscover with an O(len(Lines)) scan on every call. Built by
+	// ensureShownIndices and reused until the filter set, hideUnmatched, or
+	// contextLines actually change, so a pure cursor-movement render can
+	// locate the cursor's row and its visible window with a binary search
+	// and a bounded walk instead of scanning every line in the log.
+	shownIndices    []int
+	shownIndicesKey string
 }
 
 // matchState is one line's cached result against the current filter set.
@@ -152,9 +172,16 @@ func (v *LogView) ensureMatchCache(filters []filterfiles.Filter) {
 // highlighting match for -- the same result as filterfiles.CountMatches,
 // but computed from (and populating) the per-line match cache so it doesn't
 // re-run every filter's regex against every line a second time in the same
-// frame that MakeTable already did.
+// frame that MakeTable already did. The tally itself is cached under the
+// same key as matchCache, since MatchCounts is called on every render (see
+// ui.go) and re-summing all of matchCache every time would otherwise be an
+// O(len(Lines)) cost on every keystroke even when nothing changed.
 func (v *LogView) MatchCounts(filters []filterfiles.Filter) []int {
 	v.ensureMatchCache(filters)
+
+	if v.matchCountsKey == v.matchCacheKey && v.matchCounts != nil {
+		return append([]int(nil), v.matchCounts...)
+	}
 
 	counts := make([]int, len(filters))
 	for _, ms := range v.matchCache {
@@ -162,7 +189,9 @@ func (v *LogView) MatchCounts(filters []filterfiles.Filter) []int {
 			counts[ms.filterIndex]++
 		}
 	}
-	return counts
+	v.matchCounts = counts
+	v.matchCountsKey = v.matchCacheKey
+	return append([]int(nil), counts...)
 }
 
 var logStyle = lipgloss.NewStyle().
@@ -204,6 +233,29 @@ func shownLines(cache []matchState, hideUnmatched bool, contextLines int) []bool
 	return shown
 }
 
+// ensureShownIndices (re)computes v.shownIndices -- the indices of every
+// shown, non-excluded line, in ascending order -- if the filter set,
+// hideUnmatched, or contextLines have changed (or the cache has never been
+// built) since the last call; otherwise it leaves the existing cache in
+// place. Callers must call ensureMatchCache first, since this reads
+// v.matchCache.
+func (v *LogView) ensureShownIndices(filters []filterfiles.Filter, hideUnmatched bool, contextLines int) {
+	key := v.matchCacheKey + "|" + strconv.FormatBool(hideUnmatched) + "|" + strconv.Itoa(contextLines)
+	if key == v.shownIndicesKey && v.shownIndices != nil {
+		return
+	}
+
+	shown := shownLines(v.matchCache, hideUnmatched, contextLines)
+	indices := make([]int, 0, len(v.Lines))
+	for i, ms := range v.matchCache {
+		if shown[i] && !ms.excluded {
+			indices = append(indices, i)
+		}
+	}
+	v.shownIndices = indices
+	v.shownIndicesKey = key
+}
+
 // buildRow formats and, if the line has a highlighting match, styles a
 // single line into the table.Row bubbles/table will render.
 func buildRow(i int, line string, ms matchState, filters []filterfiles.Filter) table.Row {
@@ -235,31 +287,30 @@ func (v *LogView) MakeTable(windowWidth int, windowHeight int, filters []filterf
 	}
 
 	v.ensureMatchCache(filters)
-	shown := shownLines(v.matchCache, hideUnmatched, contextLines)
+	v.ensureShownIndices(filters, hideUnmatched, contextLines)
 
 	// bubbles/table's own UpdateViewport only ever renders rows in
 	// [cursor-height, cursor+height] (see its renderRow/UpdateViewport) --
 	// building a fully formatted/styled table.Row for every shown line in
 	// the whole log, only for almost all of them to never actually be
 	// joined into the rendered output, is wasted work that scales with the
-	// log's size instead of the terminal's. So first make a cheap pass
-	// (cache lookups only, no formatting) to find cursorRow -- the
-	// position, among shown/non-excluded lines, of the last such line at or
-	// before v.Cursor -- and shownCount, the total such lines in the whole
-	// log (needed for status-line reporting, since Table.Rows() will no
-	// longer reflect it once windowed).
-	shownCount := 0
-	cursorRow := 0
-	for i := range v.Lines {
-		if !shown[i] || v.matchCache[i].excluded {
-			continue
-		}
-		if i <= v.Cursor {
-			cursorRow = shownCount
-		}
-		shownCount++
-	}
+	// log's size instead of the terminal's. shownIndices (cached by
+	// ensureShownIndices, and only rebuilt when filters/hideUnmatched/
+	// contextLines change) lets us find cursorRow -- the position, among
+	// shown/non-excluded lines, of the last such line at or before
+	// v.Cursor -- with a binary search instead of an O(len(Lines)) scan.
+	shownCount := len(v.shownIndices)
 	v.ShownCount = shownCount
+
+	// rank is the number of shownIndices <= v.Cursor; cursorRow is the last
+	// such line's 0-based position, or 0 if none precede the cursor (this
+	// matches the "snap to the nearest visible line" behavior when the
+	// cursor itself sits on a hidden/excluded line).
+	rank := sort.Search(shownCount, func(i int) bool { return v.shownIndices[i] > v.Cursor })
+	cursorRow := 0
+	if rank > 0 {
+		cursorRow = rank - 1
+	}
 
 	// TODO: Replace hardcoded offset with the size of the filter section
 	height := windowHeight - 12
@@ -270,18 +321,8 @@ func (v *LogView) MakeTable(windowWidth int, windowHeight int, filters []filterf
 	end := clamp(cursorRow+height, cursorRow, shownCount)
 
 	rows := make([]table.Row, 0, end-start)
-	rowPos := 0
-	for i, line := range v.Lines {
-		if !shown[i] || v.matchCache[i].excluded {
-			continue
-		}
-		if rowPos >= end {
-			break
-		}
-		if rowPos >= start {
-			rows = append(rows, buildRow(i, line, v.matchCache[i], filters))
-		}
-		rowPos++
+	for _, i := range v.shownIndices[start:end] {
+		rows = append(rows, buildRow(i, v.Lines[i], v.matchCache[i], filters))
 	}
 
 	t := table.New(
