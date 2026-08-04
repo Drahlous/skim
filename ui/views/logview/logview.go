@@ -295,10 +295,45 @@ func clamp(v, low, high int) int {
 	return v
 }
 
+// lineNumberColumnWidth returns the width the "#" column needs to show the
+// largest line number in a numLines-line file without truncating it, with a
+// floor of 4 to match the column's previous fixed width for small files.
+func lineNumberColumnWidth(numLines int) int {
+	width := len(strconv.Itoa(numLines))
+	if width < 4 {
+		return 4
+	}
+	return width
+}
+
+// paneBorderStyle mirrors the border ui.go's paneStyle wraps every pane in
+// (see baseStyle/focusedStyle in ui.go) -- it exists here purely so
+// tableChromeWidth can read its width off the real lipgloss.Border value
+// instead of restating it as a bare number. logview can't import the ui
+// package to use baseStyle directly (ui already imports logview, so that
+// would be a cycle); if ui.go's pane border ever changes, this needs to
+// change with it.
+var paneBorderStyle = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder())
+
+// tableChromeWidth returns how many terminal columns a bubbles/table with
+// numColumns columns consumes beyond the sum of the columns' own Width
+// values -- everything a caller must subtract from windowWidth before
+// splitting the remainder across column widths. Two things eat into
+// windowWidth before it reaches column content:
+//   - bubbles/table pads every cell with its default Cell/Header style
+//     (Padding(0, 1)): 1 column on each side, per column.
+//   - the pane border applied around the whole rendered table (see
+//     paneBorderStyle above): 1 column on each side, once per table.
+func tableChromeWidth(numColumns int) int {
+	cellPadding := table.DefaultStyles().Cell.GetHorizontalPadding()
+	return paneBorderStyle.GetHorizontalFrameSize() + numColumns*cellPadding
+}
+
 func (v *LogView) MakeTable(windowWidth int, windowHeight int, filters []filterfiles.Filter, hideUnmatched bool, contextLines int) table.Model {
+	numberWidth := lineNumberColumnWidth(len(v.Lines))
 	columns := []table.Column{
-		{Title: "#", Width: 4},
-		{Title: "Line", Width: windowWidth - 10}, // TODO: Avoid hardcoding this offset
+		{Title: "#", Width: numberWidth},
+		{Title: "Line", Width: windowWidth - numberWidth - tableChromeWidth(2)},
 	}
 
 	v.ensureMatchCache(filters)
