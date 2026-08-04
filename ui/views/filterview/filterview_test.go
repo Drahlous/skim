@@ -1,6 +1,7 @@
 package filterview
 
 import (
+	"github.com/charmbracelet/lipgloss"
 	"skim/filterfiles"
 	"strings"
 	"testing"
@@ -370,6 +371,29 @@ func TestRenderShowsSelectedColumnAsBraces(t *testing.T) {
 	}
 	if !strings.Contains(out, "^debug") || !strings.Contains(out, "goodbye") {
 		t.Errorf("expected both filters' regex text in output, got:\n%s", out)
+	}
+}
+
+func TestRenderFillsExactlyWindowWidth(t *testing.T) {
+	windowWidth := 120
+	v := FilterView{
+		Filters: []filterfiles.Filter{
+			mustFilter(t, "^debug", false, true, "#87CEFA"),
+			mustFilter(t, "goodbye", false, false, "#FF0000"),
+		},
+	}
+
+	// Render's own output doesn't include ui.go's pane border (that's
+	// applied afterward by ui.go's paneStyle.Render) -- so its content
+	// should exactly fill windowWidth minus that border, with nothing left
+	// over and nothing overflowing it. This is the invariant filterChromeWidth
+	// exists to preserve; a wrong offset here would either waste terminal
+	// columns or push the table wider than the pane border can absorb.
+	want := windowWidth - paneBorderStyle.GetHorizontalFrameSize()
+	for _, line := range strings.Split(v.Render(windowWidth, 30, nil), "\n") {
+		if got := lipgloss.Width(line); got != want {
+			t.Errorf("line %q rendered at width %d, want %d (windowWidth - pane border)", line, got, want)
+		}
 	}
 }
 

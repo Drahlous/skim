@@ -177,6 +177,33 @@ func cell(content string, width int) string {
 	return lipgloss.NewStyle().Width(width).MaxWidth(width).Inline(true).Render(content)
 }
 
+// paneBorderStyle mirrors the border ui.go's paneStyle wraps every pane in
+// (see baseStyle/focusedStyle in ui.go) -- it exists here purely so
+// filterChromeWidth can read its width off the real lipgloss.Border value
+// instead of restating it as a bare number. filterview can't import the ui
+// package to use baseStyle directly (ui already imports filterview, so
+// that would be a cycle); if ui.go's pane border style ever changes, this
+// needs to change with it.
+var paneBorderStyle = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder())
+
+// columnSeparatorWidth is the width of the literal " " that lipgloss.
+// JoinHorizontal glues between each pair of columns in Render below.
+// Unlike logview, which renders through bubbles/table and gets per-cell
+// padding for free from its default Cell/Header style, this table is
+// hand-rolled (see cell's doc comment for why), so its column "padding" is
+// just this literal separator.
+const columnSeparatorWidth = 1
+
+// filterChromeWidth returns how many terminal columns numColumns rendered
+// columns cost beyond the sum of their own widths -- everything a caller
+// must subtract from windowWidth before splitting the remainder across
+// column widths: one columnSeparatorWidth between each adjacent pair of
+// columns, plus the pane border wrapped around the whole table (see
+// paneBorderStyle above).
+func filterChromeWidth(numColumns int) int {
+	return paneBorderStyle.GetHorizontalFrameSize() + (numColumns-1)*columnSeparatorWidth
+}
+
 // checkboxCell renders a single checkbox cell: bracketed normally, or braced
 // and highlighted pink (matching selectedCellStyle) when it's the
 // row/column currently under the cursor -- so the highlight always matches
@@ -214,7 +241,8 @@ func (v *FilterView) Render(windowWidth int, windowHeight int, counts []int) str
 	descWidth := 20
 	caseWidth := 4
 	exclWidth := 4
-	regexWidth := windowWidth - 16 - countWidth - 1 - descWidth - 1 - exclWidth - 1 // TODO: Avoid hardcoding this offset
+	// 6 columns: enabled, count, description, regex, case-sensitive, excluding.
+	regexWidth := windowWidth - filterChromeWidth(6) - enabledWidth - countWidth - descWidth - caseWidth - exclWidth
 
 	var b strings.Builder
 

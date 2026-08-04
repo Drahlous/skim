@@ -2,6 +2,7 @@ package logview
 
 import (
 	"fmt"
+	"github.com/charmbracelet/lipgloss"
 	"regexp"
 	"skim/filterfiles"
 	"strconv"
@@ -153,6 +154,25 @@ func TestMakeTableLineNumberColumnWidensForLargeLineCounts(t *testing.T) {
 	}
 	if strings.Contains(view, "…") {
 		t.Errorf("rendered view contains a truncation ellipsis, want the full line number visible:\n%s", view)
+	}
+}
+
+func TestMakeTableFillsExactlyWindowWidth(t *testing.T) {
+	windowWidth := 100
+	v := LogView{Lines: []string{"hello"}}
+	tbl := v.MakeTable(windowWidth, 30, nil, false, 0)
+
+	// MakeTable's own render doesn't include ui.go's pane border (that's
+	// applied afterward by ui.go's paneStyle.Render) -- so its content
+	// should exactly fill windowWidth minus that border, with nothing left
+	// over and nothing overflowing it. This is the invariant tableChromeWidth
+	// exists to preserve; a wrong offset here would either waste terminal
+	// columns or push the table wider than the pane border can absorb.
+	want := windowWidth - paneBorderStyle.GetHorizontalFrameSize()
+	for _, line := range strings.Split(tbl.View(), "\n") {
+		if got := lipgloss.Width(line); got != want {
+			t.Errorf("line %q rendered at width %d, want %d (windowWidth - pane border)", line, got, want)
+		}
 	}
 }
 
