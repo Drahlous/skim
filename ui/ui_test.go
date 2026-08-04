@@ -205,6 +205,8 @@ func TestRenderStatusLine(t *testing.T) {
 
 func TestPaneStyleHighlightsFocusedPaneOnly(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
+	newModel, _ := m.Update(keyMsg("tab")) // FilterFocus
+	m = newModel.(model)
 
 	if m.focus != FilterFocus {
 		t.Fatalf("precondition: focus = %v, want FilterFocus", m.focus)
@@ -216,7 +218,7 @@ func TestPaneStyleHighlightsFocusedPaneOnly(t *testing.T) {
 		t.Error("paneStyle(LogFocus) should be baseStyle while FilterFocus is active")
 	}
 
-	newModel, _ := m.Update(keyMsg("tab"))
+	newModel, _ = m.Update(keyMsg("tab"))
 	m = newModel.(model)
 
 	if m.paneStyle(LogFocus).GetBorderTopForeground() != focusedStyle.GetBorderTopForeground() {
@@ -231,8 +233,8 @@ func TestInitialModel(t *testing.T) {
 	filters := []filterfiles.Filter{mustFilter(t, "^debug")}
 	m := newTestModel(t, filters, "line one\nline two\n")
 
-	if m.focus != FilterFocus {
-		t.Errorf("initial focus = %v, want FilterFocus", m.focus)
+	if m.focus != LogFocus {
+		t.Errorf("initial focus = %v, want LogFocus", m.focus)
 	}
 	if !m.hideUnmatched {
 		t.Error("initial hideUnmatched = false, want true")
@@ -263,29 +265,31 @@ func TestUpdateQuit(t *testing.T) {
 func TestUpdateSwitchFocus(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
 
-	if m.focus != FilterFocus {
-		t.Fatalf("precondition: focus = %v, want FilterFocus", m.focus)
+	if m.focus != LogFocus {
+		t.Fatalf("precondition: focus = %v, want LogFocus", m.focus)
 	}
 
 	newModel, _ := m.Update(keyMsg("tab"))
 	m = newModel.(model)
-	if m.focus != LogFocus {
-		t.Errorf("focus after tab = %v, want LogFocus", m.focus)
+	if m.focus != FilterFocus {
+		t.Errorf("focus after tab = %v, want FilterFocus", m.focus)
 	}
 
 	newModel, _ = m.Update(keyMsg("tab"))
 	m = newModel.(model)
-	if m.focus != FilterFocus {
-		t.Errorf("focus after second tab = %v, want FilterFocus", m.focus)
+	if m.focus != LogFocus {
+		t.Errorf("focus after second tab = %v, want LogFocus", m.focus)
 	}
 }
 
 func TestUpdateCursorMovementRoutesToFocusedView(t *testing.T) {
 	filters := []filterfiles.Filter{mustFilter(t, "a"), mustFilter(t, "b")}
 	m := newTestModel(t, filters, "line one\nline two\nline three\n")
+	newModel, _ := m.Update(keyMsg("tab")) // FilterFocus
+	m = newModel.(model)
 
 	// FilterFocus: j/k should move the filter cursor.
-	newModel, _ := m.Update(keyMsg("j"))
+	newModel, _ = m.Update(keyMsg("j"))
 	m = newModel.(model)
 	if m.filters.Cursor != 1 {
 		t.Errorf("filters.Cursor after j = %d, want 1", m.filters.Cursor)
@@ -310,9 +314,11 @@ func TestUpdateCursorMovementRoutesToFocusedView(t *testing.T) {
 func TestUpdateHKeyIsContextSensitive(t *testing.T) {
 	filters := []filterfiles.Filter{mustFilter(t, "a")}
 	m := newTestModel(t, filters, "line\n")
+	newModel, _ := m.Update(keyMsg("tab")) // FilterFocus
+	m = newModel.(model)
 
 	// FilterFocus: h moves the column selection, does not touch hideUnmatched.
-	newModel, _ := m.Update(keyMsg("h"))
+	newModel, _ = m.Update(keyMsg("h"))
 	m = newModel.(model)
 	if !m.hideUnmatched {
 		t.Error("hideUnmatched changed by h while FilterFocus, want unchanged (true)")
@@ -342,7 +348,9 @@ func TestUpdateToggleEnabledCheckbox(t *testing.T) {
 		t.Fatal("precondition: filter should start enabled")
 	}
 
-	newModel, _ := m.Update(keyMsg("enter"))
+	newModel, _ := m.Update(keyMsg("tab")) // FilterFocus
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("enter"))
 	m = newModel.(model)
 	if m.filters.Filters[0].IsEnabled {
 		t.Error("filter still enabled after enter, want toggled off")
@@ -353,6 +361,8 @@ func TestUpdateEditRegexOpensFilterEditor(t *testing.T) {
 	filters := []filterfiles.Filter{mustFilter(t, "a")}
 	m := newTestModel(t, filters, "line\n")
 
+	newModel, _ := m.Update(keyMsg("tab")) // FilterFocus
+	m = newModel.(model)
 	newModel, cmd := m.Update(keyMsg("i"))
 	m = newModel.(model)
 	if !m.editingFilter {
@@ -379,7 +389,9 @@ func TestUpdateEditRegexNoOpWithoutFilters(t *testing.T) {
 func TestUpdateNewFilterOpensFilterEditor(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
 
-	newModel, _ := m.Update(keyMsg("a"))
+	newModel, _ := m.Update(keyMsg("tab")) // FilterFocus
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("a"))
 	m = newModel.(model)
 
 	if len(m.filters.Filters) != 2 {
@@ -846,9 +858,11 @@ func update(t *testing.T, m model, msgs ...tea.Msg) model {
 func TestMouseWheelScrollsFocusedView(t *testing.T) {
 	filters := []filterfiles.Filter{mustFilter(t, "a"), mustFilter(t, "b")}
 	m := newTestModel(t, filters, "line one\nline two\nline three\n")
+	newModel, _ := m.Update(keyMsg("tab")) // FilterFocus
+	m = newModel.(model)
 
 	// FilterFocus: wheel should move the filter cursor.
-	newModel, _ := m.Update(tea.MouseMsg{Type: tea.MouseWheelDown})
+	newModel, _ = m.Update(tea.MouseMsg{Type: tea.MouseWheelDown})
 	m = newModel.(model)
 	if m.filters.Cursor != 1 {
 		t.Errorf("filters.Cursor after wheel down = %d, want 1", m.filters.Cursor)
@@ -878,9 +892,7 @@ func TestMouseWheelScrollsFocusedView(t *testing.T) {
 
 func TestMouseWheelIgnoredWhileSearching(t *testing.T) {
 	m := newTestModel(t, nil, "line one\nline two\n")
-	newModel, _ := m.Update(keyMsg("tab")) // LogFocus
-	m = newModel.(model)
-	newModel, _ = m.Update(keyMsg("/"))
+	newModel, _ := m.Update(keyMsg("/"))
 	m = newModel.(model)
 
 	newModel, _ = m.Update(tea.MouseMsg{Type: tea.MouseWheelDown})
@@ -1170,10 +1182,7 @@ func equalStrings(a, b []string) bool {
 
 func TestSearchOpensCapturesAndJumpsOnEnter(t *testing.T) {
 	m := newTestModel(t, nil, "alpha\nbravo\ncharlie\nbravo two\n")
-	newModel, _ := m.Update(keyMsg("tab")) // LogFocus
-	m = newModel.(model)
-
-	newModel, _ = m.Update(keyMsg("/"))
+	newModel, _ := m.Update(keyMsg("/"))
 	m = newModel.(model)
 	if !m.searching {
 		t.Fatal("searching = false after /, want true")
@@ -1203,9 +1212,7 @@ func TestSearchOpensCapturesAndJumpsOnEnter(t *testing.T) {
 
 func TestSearchBackspaceAndEscCancel(t *testing.T) {
 	m := newTestModel(t, nil, "alpha\nbravo\n")
-	newModel, _ := m.Update(keyMsg("tab"))
-	m = newModel.(model)
-	newModel, _ = m.Update(keyMsg("/"))
+	newModel, _ := m.Update(keyMsg("/"))
 	m = newModel.(model)
 
 	newModel, _ = m.Update(keyMsg("a"))
@@ -1233,9 +1240,7 @@ func TestSearchBackspaceAndEscCancel(t *testing.T) {
 
 func TestSearchBackspaceRemovesWholeRuneNotJustOneByte(t *testing.T) {
 	m := newTestModel(t, nil, "line\n")
-	newModel, _ := m.Update(keyMsg("tab"))
-	m = newModel.(model)
-	newModel, _ = m.Update(keyMsg("/"))
+	newModel, _ := m.Update(keyMsg("/"))
 	m = newModel.(model)
 
 	// "é" is a single rune but two UTF-8 bytes; a byte-based backspace would
@@ -1261,9 +1266,7 @@ func TestSearchBackspaceRemovesWholeRuneNotJustOneByte(t *testing.T) {
 
 func TestSearchInvalidRegexSetsErrorAndStaysInSearchMode(t *testing.T) {
 	m := newTestModel(t, nil, "line\n")
-	newModel, _ := m.Update(keyMsg("tab"))
-	m = newModel.(model)
-	newModel, _ = m.Update(keyMsg("/"))
+	newModel, _ := m.Update(keyMsg("/"))
 	m = newModel.(model)
 
 	for _, r := range "([unclosed" {
@@ -1287,11 +1290,9 @@ func TestSearchInvalidRegexSetsErrorAndStaysInSearchMode(t *testing.T) {
 
 func TestSearchInvalidRegexRetryDoesNotClobberPreviousSearch(t *testing.T) {
 	m := newTestModel(t, nil, "alpha\nbravo\ncharlie\n")
-	newModel, _ := m.Update(keyMsg("tab"))
-	m = newModel.(model)
 
 	// A first, valid search.
-	newModel, _ = m.Update(keyMsg("/"))
+	newModel, _ := m.Update(keyMsg("/"))
 	m = newModel.(model)
 	for _, r := range "bravo" {
 		newModel, _ = m.Update(keyMsg(string(r)))
@@ -1332,9 +1333,7 @@ func TestSearchInvalidRegexRetryDoesNotClobberPreviousSearch(t *testing.T) {
 
 func TestSearchNextAndPrevJumpUsingLastSearch(t *testing.T) {
 	m := newTestModel(t, nil, "alpha\nbravo\ncharlie\nbravo two\n")
-	newModel, _ := m.Update(keyMsg("tab"))
-	m = newModel.(model)
-	newModel, _ = m.Update(keyMsg("/"))
+	newModel, _ := m.Update(keyMsg("/"))
 	m = newModel.(model)
 	for _, r := range "bravo" {
 		newModel, _ = m.Update(keyMsg(string(r)))
@@ -1361,10 +1360,8 @@ func TestSearchNextAndPrevJumpUsingLastSearch(t *testing.T) {
 
 func TestSearchNextNoOpWithoutPriorSearch(t *testing.T) {
 	m := newTestModel(t, nil, "alpha\nbravo\n")
-	newModel, _ := m.Update(keyMsg("tab"))
-	m = newModel.(model)
 
-	newModel, _ = m.Update(keyMsg("n"))
+	newModel, _ := m.Update(keyMsg("n"))
 	m = newModel.(model)
 	if m.log.Cursor != 0 {
 		t.Errorf("log.Cursor after n with no prior search = %d, want unchanged 0", m.log.Cursor)
@@ -1374,7 +1371,9 @@ func TestSearchNextNoOpWithoutPriorSearch(t *testing.T) {
 func TestUpdateDeleteFilterMarksDirty(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a"), mustFilter(t, "b")}, "line\n")
 
-	newModel, _ := m.Update(keyMsg("d"))
+	newModel, _ := m.Update(keyMsg("tab")) // FilterFocus
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("d"))
 	m = newModel.(model)
 
 	if len(m.filters.Filters) != 1 {
@@ -1398,7 +1397,9 @@ func TestUpdateDeleteFilterNoOpWithoutFilters(t *testing.T) {
 
 func TestUpdateMoveFilterUpDown(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a"), mustFilter(t, "b")}, "line\n")
-	newModel, _ := m.Update(keyMsg("j")) // cursor to filter 1 ("b")
+	newModel, _ := m.Update(keyMsg("tab")) // FilterFocus
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("j")) // cursor to filter 1 ("b")
 	m = newModel.(model)
 
 	newModel, _ = m.Update(keyMsg("["))
@@ -1419,8 +1420,10 @@ func TestUpdateMoveFilterUpDown(t *testing.T) {
 
 func TestUpdateMoveFilterNoOpAtBoundaryDoesNotMarkDirty(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a"), mustFilter(t, "b")}, "line\n")
+	newModel, _ := m.Update(keyMsg("tab")) // FilterFocus
+	m = newModel.(model)
 	// Cursor starts at 0 (the top): '[' (move up) should be a no-op.
-	newModel, _ := m.Update(keyMsg("["))
+	newModel, _ = m.Update(keyMsg("["))
 	m = newModel.(model)
 	if m.filtersDirty {
 		t.Error("filtersDirty = true after a no-op move at the top boundary, want false")
@@ -1439,7 +1442,9 @@ func TestUpdateMoveFilterNoOpAtBoundaryDoesNotMarkDirty(t *testing.T) {
 func TestUpdateToggleOnEmptyFilterListDoesNotMarkDirty(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
 
-	newModel, _ := m.Update(keyMsg("d")) // delete the only filter
+	newModel, _ := m.Update(keyMsg("tab")) // FilterFocus
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("d")) // delete the only filter
 	m = newModel.(model)
 	if len(m.filters.Filters) != 0 {
 		t.Fatalf("precondition: expected an empty filter list, got %d filters", len(m.filters.Filters))
@@ -1457,7 +1462,9 @@ func TestUpdateToggleOnEmptyFilterListDoesNotMarkDirty(t *testing.T) {
 
 func TestUpdateSaveFiltersSuccess(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
-	newModel, _ := m.Update(keyMsg("enter")) // toggle a filter off, so there's something to save
+	newModel, _ := m.Update(keyMsg("tab")) // FilterFocus
+	m = newModel.(model)
+	newModel, _ = m.Update(keyMsg("enter")) // toggle a filter off, so there's something to save
 	m = newModel.(model)
 	if !m.filtersDirty {
 		t.Fatal("precondition: filtersDirty should be true after toggling a filter")
@@ -1518,14 +1525,12 @@ func TestRenderStatusLineShowsDirtyAndSaveStatus(t *testing.T) {
 
 func TestUpdateContextLinesIncreaseDecrease(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
-	newModel, _ := m.Update(keyMsg("tab")) // LogFocus
-	m = newModel.(model)
 
 	if m.contextLines != 0 {
 		t.Fatalf("precondition: contextLines = %d, want 0", m.contextLines)
 	}
 
-	newModel, _ = m.Update(keyMsg("+"))
+	newModel, _ := m.Update(keyMsg("+"))
 	m = newModel.(model)
 	if m.contextLines != 1 {
 		t.Errorf("contextLines after + = %d, want 1", m.contextLines)
@@ -1546,10 +1551,8 @@ func TestUpdateContextLinesIncreaseDecrease(t *testing.T) {
 
 func TestUpdateContextLinesDoesNotGoNegative(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line\n")
-	newModel, _ := m.Update(keyMsg("tab"))
-	m = newModel.(model)
 
-	newModel, _ = m.Update(keyMsg("-"))
+	newModel, _ := m.Update(keyMsg("-"))
 	m = newModel.(model)
 	if m.contextLines != 0 {
 		t.Errorf("contextLines after - at zero = %d, want unchanged 0", m.contextLines)
@@ -1705,8 +1708,6 @@ func TestViewShowsSearchPromptWhileSearching(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "^debug")}, "debug: hello\nworld\n")
 	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = newModel.(model)
-	newModel, _ = m.Update(keyMsg("tab"))
-	m = newModel.(model)
 	newModel, _ = m.Update(keyMsg("/"))
 	m = newModel.(model)
 	newModel, _ = m.Update(keyMsg("w"))
@@ -1720,10 +1721,8 @@ func TestViewShowsSearchPromptWhileSearching(t *testing.T) {
 
 func TestJumpToTopAndBottom(t *testing.T) {
 	m := newTestModel(t, nil, "one\ntwo\nthree\nfour\n")
-	newModel, _ := m.Update(keyMsg("tab")) // LogFocus
-	m = newModel.(model)
 
-	newModel, _ = m.Update(keyMsg("j"))
+	newModel, _ := m.Update(keyMsg("j"))
 	m = newModel.(model)
 	newModel, _ = m.Update(keyMsg("j"))
 	m = newModel.(model)
@@ -1746,10 +1745,8 @@ func TestJumpToTopAndBottom(t *testing.T) {
 
 func TestJumpToTopBottomNoOpOnEmptyLog(t *testing.T) {
 	m := newTestModel(t, nil, "")
-	newModel, _ := m.Update(keyMsg("tab"))
-	m = newModel.(model)
 
-	newModel, _ = m.Update(keyMsg("G"))
+	newModel, _ := m.Update(keyMsg("G"))
 	m = newModel.(model)
 	if m.log.Cursor != 0 {
 		t.Errorf("log.Cursor after G on empty log = %d, want unchanged 0", m.log.Cursor)
@@ -1758,10 +1755,8 @@ func TestJumpToTopBottomNoOpOnEmptyLog(t *testing.T) {
 
 func TestJumpToLineOpensCapturesAndJumpsOnEnter(t *testing.T) {
 	m := newTestModel(t, nil, "one\ntwo\nthree\nfour\nfive\n")
-	newModel, _ := m.Update(keyMsg("tab")) // LogFocus
-	m = newModel.(model)
 
-	newModel, _ = m.Update(keyMsg(":"))
+	newModel, _ := m.Update(keyMsg(":"))
 	m = newModel.(model)
 	if !m.jumpingToLine {
 		t.Fatal("jumpingToLine = false after :, want true")
@@ -1788,10 +1783,8 @@ func TestJumpToLineOpensCapturesAndJumpsOnEnter(t *testing.T) {
 
 func TestJumpToLineClampsOutOfRangeInput(t *testing.T) {
 	m := newTestModel(t, nil, "one\ntwo\nthree\n")
-	newModel, _ := m.Update(keyMsg("tab"))
-	m = newModel.(model)
 
-	newModel, _ = m.Update(keyMsg(":"))
+	newModel, _ := m.Update(keyMsg(":"))
 	m = newModel.(model)
 	for _, r := range "999" {
 		newModel, _ = m.Update(keyMsg(string(r)))
@@ -1807,10 +1800,8 @@ func TestJumpToLineClampsOutOfRangeInput(t *testing.T) {
 
 func TestJumpToLineEmptyInputJustClosesPrompt(t *testing.T) {
 	m := newTestModel(t, nil, "one\ntwo\n")
-	newModel, _ := m.Update(keyMsg("tab"))
-	m = newModel.(model)
 
-	newModel, _ = m.Update(keyMsg(":"))
+	newModel, _ := m.Update(keyMsg(":"))
 	m = newModel.(model)
 	newModel, _ = m.Update(keyMsg("enter")) // empty input just closes the prompt
 	m = newModel.(model)
@@ -1824,10 +1815,8 @@ func TestJumpToLineEmptyInputJustClosesPrompt(t *testing.T) {
 
 func TestJumpToLineIgnoresNonDigitRunes(t *testing.T) {
 	m := newTestModel(t, nil, "one\ntwo\n")
-	newModel, _ := m.Update(keyMsg("tab"))
-	m = newModel.(model)
 
-	newModel, _ = m.Update(keyMsg(":"))
+	newModel, _ := m.Update(keyMsg(":"))
 	m = newModel.(model)
 	for _, r := range "1x2" {
 		newModel, _ = m.Update(keyMsg(string(r)))
@@ -1840,9 +1829,7 @@ func TestJumpToLineIgnoresNonDigitRunes(t *testing.T) {
 
 func TestJumpToLineBackspaceAndEscCancel(t *testing.T) {
 	m := newTestModel(t, nil, "one\ntwo\n")
-	newModel, _ := m.Update(keyMsg("tab"))
-	m = newModel.(model)
-	newModel, _ = m.Update(keyMsg(":"))
+	newModel, _ := m.Update(keyMsg(":"))
 	m = newModel.(model)
 
 	newModel, _ = m.Update(keyMsg("1"))
@@ -1871,8 +1858,6 @@ func TestJumpToLineBackspaceAndEscCancel(t *testing.T) {
 func TestRenderStatusLineShowsLinePosition(t *testing.T) {
 	m := newTestModel(t, nil, "one\ntwo\nthree\n")
 	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m = newModel.(model)
-	newModel, _ = m.Update(keyMsg("tab"))
 	m = newModel.(model)
 	m.log.MakeTable(m.windowWidth, m.windowHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)
 
@@ -1903,8 +1888,6 @@ func TestViewShowsJumpLinePromptWhileJumping(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "^debug")}, "debug: hello\nworld\n")
 	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = newModel.(model)
-	newModel, _ = m.Update(keyMsg("tab"))
-	m = newModel.(model)
 	newModel, _ = m.Update(keyMsg(":"))
 	m = newModel.(model)
 	newModel, _ = m.Update(keyMsg("2"))
@@ -1919,8 +1902,6 @@ func TestViewShowsJumpLinePromptWhileJumping(t *testing.T) {
 func TestViewShowsActiveSearchInStatusLine(t *testing.T) {
 	m := newTestModel(t, nil, "hello world\ngoodbye\n")
 	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	m = newModel.(model)
-	newModel, _ = m.Update(keyMsg("tab"))
 	m = newModel.(model)
 	newModel, _ = m.Update(keyMsg("/"))
 	m = newModel.(model)
