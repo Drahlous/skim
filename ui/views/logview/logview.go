@@ -295,10 +295,22 @@ func clamp(v, low, high int) int {
 	return v
 }
 
+// lineNumberColumnWidth returns the width the "#" column needs to show the
+// largest line number in a numLines-line file without truncating it, with a
+// floor of 4 to match the column's previous fixed width for small files.
+func lineNumberColumnWidth(numLines int) int {
+	width := len(strconv.Itoa(numLines))
+	if width < 4 {
+		return 4
+	}
+	return width
+}
+
 func (v *LogView) MakeTable(windowWidth int, windowHeight int, filters []filterfiles.Filter, hideUnmatched bool, contextLines int) table.Model {
+	numberWidth := lineNumberColumnWidth(len(v.Lines))
 	columns := []table.Column{
-		{Title: "#", Width: 4},
-		{Title: "Line", Width: windowWidth - 10}, // TODO: Avoid hardcoding this offset
+		{Title: "#", Width: numberWidth},
+		{Title: "Line", Width: windowWidth - numberWidth - 6}, // TODO: Avoid hardcoding this offset
 	}
 
 	v.ensureMatchCache(filters)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"skim/filterfiles"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -133,6 +134,25 @@ func TestMakeTableLineNumbersAreOneIndexed(t *testing.T) {
 	}
 	if rows[1][0] != "2" {
 		t.Errorf("second row line number = %q, want %q", rows[1][0], "2")
+	}
+}
+
+func TestMakeTableLineNumberColumnWidensForLargeLineCounts(t *testing.T) {
+	numLines := 500000
+	lines := make([]string, numLines)
+	for i := range lines {
+		lines[i] = "line"
+	}
+	v := LogView{Lines: lines, Cursor: numLines - 1}
+	tbl := v.MakeTable(100, 30, nil, false, 0)
+	view := tbl.View()
+
+	want := strconv.Itoa(numLines)
+	if !strings.Contains(view, want) {
+		t.Errorf("rendered view does not contain the full line number %q; got:\n%s", want, view)
+	}
+	if strings.Contains(view, "…") {
+		t.Errorf("rendered view contains a truncation ellipsis, want the full line number visible:\n%s", view)
 	}
 }
 
