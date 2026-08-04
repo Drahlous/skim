@@ -309,6 +309,7 @@ func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFi
 			Lines:  lines,
 			Cursor: 0,
 		},
+		focus:          LogFocus,
 		hideUnmatched:  true,
 		keyMap:         keyMap,
 		filterFilePath: filterFilePath,
