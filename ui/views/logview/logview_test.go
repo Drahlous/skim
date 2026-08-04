@@ -152,6 +152,22 @@ func TestMakeTableReplacesTabsWithSpaces(t *testing.T) {
 	}
 }
 
+func TestMakeTableSanitizesControlCharacters(t *testing.T) {
+	v := LogView{Lines: []string{"mixed CRLF-ish line\r trailing"}}
+	table := v.MakeTable(100, 30, nil, false, 0)
+	rows := table.Rows()
+
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if strings.ContainsAny(rows[0][1], "\r\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\x0e\x0f\x1f") {
+		t.Errorf("row content %q still contains a raw control character", rows[0][1])
+	}
+	if !strings.Contains(rows[0][1], "mixed CRLF-ish line") || !strings.Contains(rows[0][1], "trailing") {
+		t.Errorf("row content %q lost surrounding text", rows[0][1])
+	}
+}
+
 func TestFindNextWrapsAndSkipsCurrentLine(t *testing.T) {
 	v := LogView{Lines: []string{"apple", "banana", "cherry", "banana split"}, Cursor: 1}
 	re := mustRegex(t, "banana")

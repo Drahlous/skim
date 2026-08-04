@@ -261,6 +261,7 @@ func (v *LogView) ensureShownIndices(filters []filterfiles.Filter, hideUnmatched
 func buildRow(i int, line string, ms matchState, filters []filterfiles.Filter) table.Row {
 	lineNumber := i + 1
 	line = strings.ReplaceAll(line, "\t", "    ")
+	line = sanitizeControlChars(line)
 
 	if ms.filterIndex >= 0 {
 		style := logStyle
@@ -268,6 +269,20 @@ func buildRow(i int, line string, ms matchState, filters []filterfiles.Filter) t
 		return table.Row{fmt.Sprintf("%d", lineNumber), style.Render(line)}
 	}
 	return table.Row{fmt.Sprintf("%d", lineNumber), line}
+}
+
+// sanitizeControlChars strips ASCII control characters (0x00-0x1F) that
+// would otherwise corrupt the table's rendering -- e.g. a raw \r makes the
+// terminal overwrite the line number/left border with whatever follows it
+// on the same line. Tabs are handled separately by buildRow before this
+// runs, so any tab reaching here is dropped rather than expanded.
+func sanitizeControlChars(line string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 {
+			return -1
+		}
+		return r
+	}, line)
 }
 
 func clamp(v, low, high int) int {
