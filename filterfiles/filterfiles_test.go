@@ -83,6 +83,30 @@ func TestReadFilterFileMissing(t *testing.T) {
 	}
 }
 
+func TestHideUnmatchedByDefault(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{"True", "True", true},
+		{"lowercase true", "true", true},
+		{"False", "False", false},
+		{"lowercase false", "false", false},
+		{"empty attribute defaults to false", "", false},
+		{"unrecognized value defaults to false", "yes", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			meta := TextAnalysisToolSettings{ShowOnlyFilteredLines: tt.value}
+			if got := HideUnmatchedByDefault(meta); got != tt.want {
+				t.Errorf("HideUnmatchedByDefault(%q) = %v, want %v", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCompileFilterRegularExpressions(t *testing.T) {
 	settings := TextAnalysisToolSettings{
 		Filters: []FilterXML{

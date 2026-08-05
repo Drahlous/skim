@@ -48,7 +48,7 @@ func newTestModel(t *testing.T, filters []filterfiles.Filter, lines string) mode
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	scanner := bufio.NewScanner(strings.NewReader(lines))
-	return initialModel(filters, scanner, filepath.Join(t.TempDir(), "filters.tat"), filterfiles.TextAnalysisToolSettings{})
+	return initialModel(filters, scanner, filepath.Join(t.TempDir(), "filters.tat"), filterfiles.TextAnalysisToolSettings{ShowOnlyFilteredLines: "True"})
 }
 
 func TestActiveScopes(t *testing.T) {
@@ -247,6 +247,31 @@ func TestInitialModel(t *testing.T) {
 	}
 	if len(m.keyMap) != len(keybindings.Registry) {
 		t.Errorf("keyMap has %d actions, want %d", len(m.keyMap), len(keybindings.Registry))
+	}
+}
+
+func TestInitialModelHideUnmatchedFromFileMeta(t *testing.T) {
+	tests := []struct {
+		name                  string
+		showOnlyFilteredLines string
+		want                  bool
+	}{
+		{"showOnlyFilteredLines=True hides unmatched", "True", true},
+		{"showOnlyFilteredLines=False shows everything", "False", false},
+		{"showOnlyFilteredLines absent defaults to shows everything", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			scanner := bufio.NewScanner(strings.NewReader("line one\n"))
+			meta := filterfiles.TextAnalysisToolSettings{ShowOnlyFilteredLines: tt.showOnlyFilteredLines}
+			m := initialModel(nil, scanner, filepath.Join(t.TempDir(), "filters.tat"), meta)
+
+			if m.hideUnmatched != tt.want {
+				t.Errorf("hideUnmatched = %v, want %v", m.hideUnmatched, tt.want)
+			}
+		})
 	}
 }
 
