@@ -50,6 +50,22 @@ func stdinIsPiped(r *os.File) bool {
 	return info.Mode()&os.ModeCharDevice == 0
 }
 
+// resolveLogFile returns the -log value run() should actually use: logFile
+// as given, unless -log wasn't explicitly passed on the command line and
+// stdin is piped/redirected rather than an interactive terminal, in which
+// case it returns stdinPath so `cmd | skim` works without extra flags.
+func resolveLogFile(logFile string, fs *flag.FlagSet, stdin *os.File) string {
+	if !isLogFlagSet(fs) && stdinIsPiped(stdin) {
+		return stdinPath
+	}
+	return logFile
+}
+
+// runUI is a seam for testing: run()'s success path calls this rather than
+// ui.RunUI directly, so tests can substitute a no-op and exercise run()'s
+// full happy path without handing a real terminal to Bubble Tea.
+var runUI = ui.RunUI
+
 func run(filter_file string, log_file string) {
 
 	// Read filter settings from the XML file
@@ -75,8 +91,13 @@ func run(filter_file string, log_file string) {
 	defer logfile.Close()
 	scanner := bufio.NewScanner(logfile)
 
-	ui.RunUI(filters, scanner, filter_file, filterSettings, usingStdinLog)
+	runUI(filters, scanner, filter_file, filterSettings, usingStdinLog)
 }
+
+// runFn is a seam for testing: main() calls this rather than run() directly,
+// so a test can substitute a no-op and exercise main()'s flag parsing without
+// actually reading a log file or starting the UI.
+var runFn = run
 
 func main() {
 
@@ -85,14 +106,6 @@ func main() {
 	log_file := flag.String("log", "./examples/simple_longer.log", "supply the path to the input log file, or - to read from stdin")
 	flag.Parse()
 
-	// If -log wasn't explicitly given and stdin is piped/redirected rather
-	// than an interactive terminal, read the log from stdin (as if -log -
-	// had been passed) so `cmd | skim` works without extra flags.
-	resolvedLogFile := *log_file
-	if !isLogFlagSet(flag.CommandLine) && stdinIsPiped(os.Stdin) {
-		resolvedLogFile = stdinPath
-	}
-
 	// Run the program
-	run(*filter_file, resolvedLogFile)
+	runFn(*filter_file, resolveLogFile(*log_file, flag.CommandLine, os.Stdin))
 }
