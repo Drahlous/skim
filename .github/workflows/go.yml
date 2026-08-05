@@ -34,7 +34,20 @@ jobs:
       run: go build -v ./...
 
     - name: Test
-      run: go test -v -race ./...
+      run: go test -v -race -coverprofile=coverage.out ./...
+
+    - name: Coverage summary
+      run: |
+        echo "## Test coverage" >> "$GITHUB_STEP_SUMMARY"
+        echo '```' >> "$GITHUB_STEP_SUMMARY"
+        go tool cover -func=coverage.out >> "$GITHUB_STEP_SUMMARY"
+        echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload coverage artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage
+        path: coverage.out
 
     - name: Release
       uses: softprops/action-gh-release@v1
