@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"skim/filterfiles"
+	"strings"
 	"testing"
 )
 
@@ -113,41 +114,92 @@ func captureStdout(t *testing.T, fn func()) string {
 	return string(out)
 }
 
-func TestRunPrintsErrorAndReturnsOnUnreadableFilterFile(t *testing.T) {
+func TestRunPrintsErrorAndReturnsNonZeroOnUnreadableFilterFile(t *testing.T) {
+	var code int
 	out := captureStdout(t, func() {
-		run("/nonexistent/path/to/filters.tat", "./examples/simple_longer.log")
+		code = run("/nonexistent/path/to/filters.tat", "./examples/simple_longer.log")
 	})
 	if out == "" {
 		t.Error("run() with a missing filter file printed nothing, want an error message")
 	}
+	if code != 1 {
+		t.Errorf("run() with a missing filter file returned exit code %d, want 1", code)
+	}
 }
 
-func TestRunPrintsErrorAndReturnsOnInvalidFilterRegex(t *testing.T) {
+// TestRunDisablesInvalidFilterRegexAndStillLaunchesUI covers the issue this
+// fixed: a single filter with an invalid regex anywhere in the file used to
+// abort the whole load (three redundant error logs, no TUI, exit code 0).
+// It should instead be disabled, logged once as a warning, passed through
+// to the UI, and not prevent the other (valid) filters or the TUI itself
+// from loading -- with exit code 0, since this is a recoverable problem.
+func TestRunDisablesInvalidFilterRegexAndStillLaunchesUI(t *testing.T) {
+	origRunUI := runUI
+	defer func() { runUI = origRunUI }()
+
 	path := filepath.Join(t.TempDir(), "bad.tat")
 	xml := `<?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <TextAnalysisTool.NET version="2023-04-25" showOnlyFilteredLines="False">
   <filters>
-    <filter enabled="y" excluding="n" description="" backColor="87cefa" type="matches_text" case_sensitive="n" regex="y" text="(" />
+    <filter enabled="y" excluding="n" description="good" backColor="87cefa" type="matches_text" case_sensitive="n" regex="y" text="^debug" />
+    <filter enabled="y" excluding="n" description="bad" backColor="ff0000" type="matches_text" case_sensitive="n" regex="y" text="(" />
   </filters>
 </TextAnalysisTool.NET>`
 	if err := os.WriteFile(path, []byte(xml), 0o644); err != nil {
 		t.Fatalf("failed to write test fixture: %v", err)
 	}
 
+	var called bool
+	var gotFilters []filterfiles.Filter
+	var gotWarnings []error
+	runUI = func(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFilePath string, fileMeta filterfiles.TextAnalysisToolSettings, usingStdinLog bool, warnings []error) {
+		called = true
+		gotFilters = filters
+		gotWarnings = warnings
+	}
+
+	var code int
 	out := captureStdout(t, func() {
-		run(path, "./examples/simple_longer.log")
+		code = run(path, "./examples/simple_longer.log")
 	})
-	if out == "" {
-		t.Error("run() with an unparseable filter regex printed nothing, want an error message")
+
+	if code != 0 {
+		t.Errorf("run() with one invalid filter regex returned exit code %d, want 0 (recoverable)", code)
+	}
+	if !called {
+		t.Fatal("run() with one invalid filter regex among otherwise-valid ones did not call runUI, want the TUI to still launch")
+	}
+	if len(gotFilters) != 2 {
+		t.Fatalf("got %d filters passed to runUI, want 2 (both filters, one disabled)", len(gotFilters))
+	}
+	if !gotFilters[0].IsEnabled {
+		t.Error("gotFilters[0].IsEnabled = false, want the valid filter to stay enabled")
+	}
+	if gotFilters[1].IsEnabled {
+		t.Error("gotFilters[1].IsEnabled = true, want the invalid-regex filter forced disabled")
+	}
+	if len(gotWarnings) != 1 {
+		t.Fatalf("got %d warnings, want 1 for the single invalid filter", len(gotWarnings))
+	}
+	if !strings.Contains(gotWarnings[0].Error(), "bad") {
+		t.Errorf("warning %q does not identify the offending filter by its description", gotWarnings[0].Error())
+	}
+
+	if strings.Count(out, "invalid regex") != 1 {
+		t.Errorf("run() logged the invalid-regex warning %d times to stdout, want exactly once (was 3x before this fix)", strings.Count(out, "invalid regex"))
 	}
 }
 
-func TestRunPrintsErrorAndReturnsOnUnreadableLogFile(t *testing.T) {
+func TestRunPrintsErrorAndReturnsNonZeroOnUnreadableLogFile(t *testing.T) {
+	var code int
 	out := captureStdout(t, func() {
-		run("./examples/simple_filter_two.tat", "/nonexistent/path/to.log")
+		code = run("./examples/simple_filter_two.tat", "/nonexistent/path/to.log")
 	})
 	if out == "" {
 		t.Error("run() with a missing log file printed nothing, want an error message")
+	}
+	if code != 1 {
+		t.Errorf("run() with a missing log file returned exit code %d, want 1", code)
 	}
 }
 
@@ -245,7 +297,7 @@ func TestRunSuccessPathCallsRunUI(t *testing.T) {
 	defer func() { runUI = origRunUI }()
 
 	var called bool
-	runUI = func(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFilePath string, fileMeta filterfiles.TextAnalysisToolSettings, usingStdinLog bool) {
+	runUI = func(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFilePath string, fileMeta filterfiles.TextAnalysisToolSettings, usingStdinLog bool, warnings []error) {
 		called = true
 		if len(filters) != 3 {
 			t.Errorf("got %d filters, want 3 (from examples/simple_filter_two.tat)", len(filters))
@@ -253,9 +305,14 @@ func TestRunSuccessPathCallsRunUI(t *testing.T) {
 		if usingStdinLog {
 			t.Error("usingStdinLog = true for a regular log file, want false")
 		}
+		if len(warnings) != 0 {
+			t.Errorf("got %d warnings, want 0 for a filter file with no invalid regexes", len(warnings))
+		}
 	}
 
-	run("./examples/simple_filter_two.tat", "./examples/simple_longer.log")
+	if code := run("./examples/simple_filter_two.tat", "./examples/simple_longer.log"); code != 0 {
+		t.Errorf("run() with valid filter and log files returned exit code %d, want 0", code)
+	}
 
 	if !called {
 		t.Error("run() with valid filter and log files did not call runUI")
@@ -276,17 +333,42 @@ func TestMainParsesFlagsAndCallsRunFn(t *testing.T) {
 	os.Args = []string{"skim", "-filter", "myfilters.tat", "-log", "mylog.log"}
 
 	var gotFilter, gotLog string
-	runFn = func(filterFile, logFile string) {
+	runFn = func(filterFile, logFile string) int {
 		gotFilter = filterFile
 		gotLog = logFile
+		return 0
 	}
 
-	main()
+	// mainWithExitCode, not main(), so this test doesn't call os.Exit and
+	// kill the test process.
+	if code := mainWithExitCode(); code != 0 {
+		t.Errorf("mainWithExitCode() = %d, want 0", code)
+	}
 
 	if gotFilter != "myfilters.tat" {
 		t.Errorf("main() called runFn with filter_file = %q, want %q", gotFilter, "myfilters.tat")
 	}
 	if gotLog != "mylog.log" {
 		t.Errorf("main() called runFn with log_file = %q, want %q", gotLog, "mylog.log")
+	}
+}
+
+func TestMainWithExitCodePropagatesRunFnExitCode(t *testing.T) {
+	origArgs := os.Args
+	origRunFn := runFn
+	origCommandLine := flag.CommandLine
+	defer func() {
+		os.Args = origArgs
+		runFn = origRunFn
+		flag.CommandLine = origCommandLine
+	}()
+
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	os.Args = []string{"skim", "-filter", "myfilters.tat", "-log", "mylog.log"}
+
+	runFn = func(filterFile, logFile string) int { return 1 }
+
+	if code := mainWithExitCode(); code != 1 {
+		t.Errorf("mainWithExitCode() = %d, want 1 when runFn fails", code)
 	}
 }

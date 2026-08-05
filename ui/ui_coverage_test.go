@@ -61,7 +61,7 @@ func TestInitialModelFallsBackToDefaultsOnInvalidKeybindingsConfig(t *testing.T)
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader("line\n"))
-	m := initialModel(nil, scanner, filepath.Join(t.TempDir(), "filters.tat"), filterfiles.TextAnalysisToolSettings{})
+	m := initialModel(nil, scanner, filepath.Join(t.TempDir(), "filters.tat"), filterfiles.TextAnalysisToolSettings{}, nil)
 
 	if len(m.keyMap) != len(keybindings.Registry) {
 		t.Errorf("keyMap has %d actions after falling back to defaults, want %d", len(m.keyMap), len(keybindings.Registry))
