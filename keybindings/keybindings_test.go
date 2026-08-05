@@ -138,3 +138,63 @@ func TestSaveCreatesConfigDir(t *testing.T) {
 		t.Fatalf("expected config file at %s: %v", path, err)
 	}
 }
+
+// unsetConfigDirEnv clears both env vars os.UserConfigDir consults on Unix,
+// forcing it to return an error, so configPath()'s error path can be tested.
+func unsetConfigDirEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "")
+}
+
+func TestLoadReturnsDefaultsWhenConfigPathUnresolvable(t *testing.T) {
+	unsetConfigDirEnv(t)
+
+	km, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual(km, Defaults()) {
+		t.Errorf("Load() with unresolvable config path = %v, want defaults %v", km, Defaults())
+	}
+}
+
+func TestSaveErrorsWhenConfigPathUnresolvable(t *testing.T) {
+	unsetConfigDirEnv(t)
+
+	if err := Save(Defaults()); err == nil {
+		t.Fatal("Save() with unresolvable config path returned no error")
+	}
+}
+
+func TestLoadErrorsWhenConfigFileUnreadable(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+
+	// Make keybindings.json a directory instead of a file, so os.ReadFile
+	// fails with an error other than os.IsNotExist (e.g. EISDIR), exercising
+	// Load's non-missing-file error path.
+	skimDir := filepath.Join(configDir, "skim")
+	if err := os.MkdirAll(filepath.Join(skimDir, "keybindings.json"), 0o755); err != nil {
+		t.Fatalf("failed to create directory standing in for the config file: %v", err)
+	}
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with config path pointing at a directory returned no error")
+	}
+}
+
+func TestSaveErrorsWhenConfigDirCannotBeCreated(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+
+	// Create a regular file where Save needs to mkdir a "skim" directory, so
+	// os.MkdirAll fails, exercising Save's directory-creation error path.
+	if err := os.WriteFile(filepath.Join(configDir, "skim"), []byte("not a dir"), 0o644); err != nil {
+		t.Fatalf("failed to write blocking file: %v", err)
+	}
+
+	if err := Save(Defaults()); err == nil {
+		t.Fatal("Save() with a blocked config dir returned no error")
+	}
+}
