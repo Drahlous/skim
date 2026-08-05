@@ -1704,6 +1704,63 @@ func TestViewTotalHeightStaysWithinWindowInDefaultState(t *testing.T) {
 	}
 }
 
+// TestViewTotalHeightStaysWithinWindowAsFilterCountGrows guards against the
+// bug in https://github.com/Drahlous/skim/issues/57: the filter pane used to
+// render min(5, len(Filters)) rows, so its height only coincidentally
+// matched the log pane's hardcoded budget when there were exactly 4
+// filters. Adding a 5th filter grew the filter pane by a row that the log
+// pane's budget never shrank to compensate for, overflowing the frame by
+// one line and permanently desyncing Bubble Tea's renderer (some filter
+// rows would render as stale duplicates on the next frame). This follows
+// the exact repro from the issue: tab into the filter pane, add filters
+// past the previous 4-row assumption via 'a'/'esc', and move the cursor
+// through the whole list, checking the total rendered height at every step.
+func TestViewTotalHeightStaysWithinWindowAsFilterCountGrows(t *testing.T) {
+	numLines := func(out string) int { return len(strings.Split(out, "\n")) }
+
+	filters := []filterfiles.Filter{
+		mustFilter(t, "^debug"),
+		mustFilter(t, "^info"),
+		mustFilter(t, "^warn"),
+		mustFilter(t, "^error"),
+	}
+	var b strings.Builder
+	for i := 0; i < 500; i++ {
+		fmt.Fprintf(&b, "debug: line %d\n", i)
+	}
+	m := newTestModel(t, filters, b.String())
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 165, Height: 40})
+	mdl := newModel.(model)
+
+	check := func(step string) {
+		t.Helper()
+		if got := numLines(mdl.View()); got > mdl.windowHeight {
+			t.Fatalf("after %s: View() has %d lines, exceeds windowHeight %d", step, got, mdl.windowHeight)
+		}
+	}
+	press := func(key string) {
+		t.Helper()
+		newModel, _ := mdl.Update(keyMsg(key))
+		mdl = newModel.(model)
+		check("pressing " + key)
+	}
+
+	press("tab") // FilterFocus
+	press("a")   // 5th filter -- this is where the old code overflowed
+	press("esc")
+	press("j")
+	press("a") // 6th filter
+	press("esc")
+
+	for i := 0; i < len(mdl.filters.Filters)+2; i++ {
+		press("j")
+	}
+
+	if got := len(mdl.filters.Filters); got != 6 {
+		t.Fatalf("got %d filters, want 6", got)
+	}
+}
+
 func TestViewShowsSearchPromptWhileSearching(t *testing.T) {
 	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "^debug")}, "debug: hello\nworld\n")
 	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})

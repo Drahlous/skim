@@ -825,16 +825,27 @@ func (m model) View() string {
 		footer = renderHelpHint(m.keyMap)
 	}
 
-	// logview's height budget (see its "-12" offset) assumes a single-line
-	// footer. When the footer wraps onto more lines than that -- e.g. the
-	// expanded keybindings help bar on a narrower terminal -- account for
-	// the extra lines here so the total rendered height doesn't grow past
-	// what it budgeted for. Otherwise the total frame can exceed the
-	// terminal's height, which forces Bubble Tea to drop/shift lines it
-	// can't scroll back to fix, permanently desyncing its line-by-line
-	// redraw (e.g. leaving stale footer text on screen after toggling "?").
+	// logview's height budget assumes a single-line footer. When the
+	// footer wraps onto more lines than that -- e.g. the expanded
+	// keybindings help bar on a narrower terminal -- account for the extra
+	// lines here so the total rendered height doesn't grow past what it
+	// budgeted for. Otherwise the total frame can exceed the terminal's
+	// height, which forces Bubble Tea to drop/shift lines it can't scroll
+	// back to fix, permanently desyncing its line-by-line redraw (e.g.
+	// leaving stale footer text on screen after toggling "?").
 	footerExtraLines := strings.Count(footer, "\n")
-	tableHeight := m.windowHeight - footerExtraLines
+
+	// The filter pane's rendered height is constant regardless of how many
+	// filters exist (header + filterview.VisibleHeight rows, padded/
+	// windowed by filterview.Render -- see its doc comment), so subtract
+	// it from the log pane's height budget the same way footerExtraLines
+	// is subtracted above, rather than leaving logview.MakeTable to assume
+	// a fixed filter-pane size that used to only hold by coincidence for
+	// exactly 4 filters (see the issue this fixed: a 5th filter grew the
+	// filter pane by a row that logview's budget never shrank to
+	// compensate for, overflowing the frame by one line).
+	filterPaneLines := (1 + filterview.VisibleHeight) + baseStyle.GetVerticalFrameSize()
+	tableHeight := m.windowHeight - footerExtraLines - filterPaneLines
 
 	// Make table of filtered log lines
 	m.log.MakeTable(m.windowWidth, tableHeight, m.filters.Filters, m.hideUnmatched, m.contextLines)

@@ -18,9 +18,17 @@ const (
 	maxFilterColumn                         // unused, represents the total number of columns
 )
 
-// visibleHeight is how many filter rows are shown at once (matches the
-// previous bubbles/table WithHeight(5)).
-const visibleHeight = 5
+// VisibleHeight is how many filter rows are shown at once (matches the
+// previous bubbles/table WithHeight(5)). Render always emits exactly this
+// many data rows -- padding with blank rows when there are fewer filters,
+// and windowing (scrolling) when there are more -- so the filter pane's
+// total rendered height is constant regardless of len(Filters). ui.go's
+// View relies on that constancy to size the log pane's height budget
+// correctly (see logview.MakeTable's chromeLines doc comment); if this
+// ever becomes variable again, that budget will desync the same way it
+// did before (see the CLAUDE.md gotcha on frames taller than the
+// terminal, and the issue this fixed).
+const VisibleHeight = 5
 
 type FilterView struct {
 	Cursor  int          // which filter our cursor is pointing at
@@ -258,10 +266,10 @@ func (v *FilterView) Render(windowWidth int, windowHeight int, counts []int) str
 	b.WriteString("\n")
 
 	start := 0
-	if v.Cursor >= visibleHeight {
-		start = v.Cursor - visibleHeight + 1
+	if v.Cursor >= VisibleHeight {
+		start = v.Cursor - VisibleHeight + 1
 	}
-	end := start + visibleHeight
+	end := start + VisibleHeight
 	if end > len(v.Filters) {
 		end = len(v.Filters)
 	}
@@ -294,6 +302,24 @@ func (v *FilterView) Render(windowWidth int, windowHeight int, counts []int) str
 			cell(exclCell, exclWidth),
 		)
 		b.WriteString(row)
+		b.WriteString("\n")
+	}
+
+	// Pad with blank rows so Render always emits exactly VisibleHeight data
+	// rows, regardless of len(v.Filters) -- otherwise the filter pane's
+	// rendered height would shrink and grow with the filter count, which is
+	// what desynced the log pane's height budget in the first place (see
+	// VisibleHeight's doc comment).
+	blankRow := lipgloss.JoinHorizontal(lipgloss.Left,
+		cell("", enabledWidth), " ",
+		cell("", countWidth), " ",
+		cell("", descWidth), " ",
+		cell("", regexWidth), " ",
+		cell("", caseWidth), " ",
+		cell("", exclWidth),
+	)
+	for i := end - start; i < VisibleHeight; i++ {
+		b.WriteString(blankRow)
 		b.WriteString("\n")
 	}
 
