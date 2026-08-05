@@ -21,7 +21,7 @@ jobs:
         go-version-file: 'go.mod'
 
     - name: Build
-      run: go build -v ./...
+      run: go build -v -o skim .
       
     - name: Release
       uses: softprops/action-gh-release@v3
