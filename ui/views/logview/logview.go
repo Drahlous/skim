@@ -362,8 +362,28 @@ func (v *LogView) MakeTable(windowWidth int, windowHeight int, filters []filterf
 		cursorRow = rank - 1
 	}
 
-	// TODO: Replace hardcoded offset with the size of the filter section
-	height := windowHeight - 12
+	// chromeLines accounts for vertical space in the full rendered frame
+	// (see ui.go's View) that isn't the log pane's own table rows and isn't
+	// already subtracted out of windowHeight by the caller. ui.go's View
+	// subtracts the footer's extra wrapped lines and the filter pane's
+	// (now constant -- see filterview.VisibleHeight) rendered height from
+	// windowHeight before calling MakeTable, so what's left here is just:
+	// the log pane's own header row (1) + its pane border (2, one line
+	// each side), the status line (1), and the footer's baseline single
+	// line (1) that ui.go's subtraction doesn't cover since it only
+	// accounts for lines *beyond* that baseline.
+	//
+	// This used to be a single hardcoded "-12" that silently baked in an
+	// assumption that the filter pane always rendered exactly 4 rows --
+	// true only by coincidence for the shipped 4-filter fixture, and wrong
+	// (causing the whole frame to overflow the terminal and desync Bubble
+	// Tea's renderer -- see the CLAUDE.md gotcha on this) as soon as a 5th
+	// filter was added. Making the filter pane's height constant (see
+	// filterview.VisibleHeight) and having the caller subtract it here,
+	// the same way it already does for the footer, removes that
+	// assumption instead of just re-tuning the magic number.
+	chromeLines := paneBorderStyle.GetVerticalFrameSize() + 1 /* log header row */ + 1 /* status line */ + 1 /* footer baseline */
+	height := windowHeight - chromeLines
 	if height < 1 {
 		height = 1
 	}

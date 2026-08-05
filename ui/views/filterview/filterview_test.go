@@ -498,6 +498,31 @@ func TestRenderMatchCountsDefaultToZeroWhenMissing(t *testing.T) {
 	}
 }
 
+// TestRenderAlwaysEmitsConstantRowCount guards against
+// https://github.com/Drahlous/skim/issues/57: ui.go's View sizes the log
+// pane's height budget assuming the filter pane's rendered height never
+// changes with the filter count (see VisibleHeight's doc comment). Before
+// this fix, Render emitted min(VisibleHeight, len(Filters)) rows, so the
+// pane grew every time a filter was added past 4, silently invalidating
+// that assumption and overflowing the whole frame past the terminal's
+// height. Render must instead always emit exactly VisibleHeight rows,
+// padding with blank ones when there are fewer filters.
+func TestRenderAlwaysEmitsConstantRowCount(t *testing.T) {
+	for _, n := range []int{0, 1, VisibleHeight - 1, VisibleHeight, VisibleHeight + 1, VisibleHeight * 3} {
+		var filters []filterfiles.Filter
+		for i := 0; i < n; i++ {
+			filters = append(filters, mustFilter(t, "a", false, false, "#000000"))
+		}
+		v := FilterView{Filters: filters}
+
+		out := v.Render(120, 30, nil)
+		lines := strings.Split(out, "\n")
+		if want := 1 + VisibleHeight; len(lines) != want {
+			t.Errorf("with %d filters: got %d lines, want %d (header + %d rows)", n, len(lines), want, VisibleHeight)
+		}
+	}
+}
+
 func TestRenderScrollsToKeepCursorVisible(t *testing.T) {
 	var filters []filterfiles.Filter
 	for i := 0; i < 10; i++ {
@@ -508,8 +533,8 @@ func TestRenderScrollsToKeepCursorVisible(t *testing.T) {
 	out := v.Render(80, 30, nil)
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 
-	// header + visibleHeight rows
-	if len(lines) != 1+visibleHeight {
-		t.Fatalf("got %d lines, want %d (header + %d visible rows)", len(lines), 1+visibleHeight, visibleHeight)
+	// header + VisibleHeight rows
+	if len(lines) != 1+VisibleHeight {
+		t.Fatalf("got %d lines, want %d (header + %d visible rows)", len(lines), 1+VisibleHeight, VisibleHeight)
 	}
 }
