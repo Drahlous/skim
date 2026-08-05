@@ -50,6 +50,14 @@ type Filter struct {
 	BackColor     string
 }
 
+// neverMatchRegex never matches anything, including the empty string (no
+// single rune can satisfy a negated class spanning the entire Unicode
+// range). It stands in for a filter's Regex when its configured pattern
+// fails to compile, so a disabled invalid filter -- see makeFilter -- stays
+// safe to evaluate (e.g. if a caller later flips IsEnabled without first
+// fixing the regex) instead of panicking on a zero-value regexp.Regexp.
+var neverMatchRegex = regexp.MustCompile(`[^\x00-\x{10FFFF}]`)
+
 // CompileRegex compiles text into a regexp, applying a case-insensitive
 // flag unless caseSensitive is set.
 func CompileRegex(text string, caseSensitive bool) (regexp.Regexp, error) {
@@ -89,46 +97,64 @@ func ReadFilterFile(filter_file_path string) (TextAnalysisToolSettings, error) {
 	return textAnalysisToolSettings, nil
 }
 
-func makeFilter(XML FilterXML) (Filter, error) {
+// makeFilter converts a single parsed FilterXML into a compiled Filter.
+// index is this filter's position in the file's <filters> list (0-based),
+// used only to identify it in the error message if its regex fails to
+// compile. On a regex compile failure, makeFilter does not fail outright:
+// it returns a Filter that is forced disabled (regardless of the file's own
+// enabled="y/n") with neverMatchRegex standing in for the unusable pattern,
+// plus a descriptive error identifying the offending filter -- so one bad
+// filter in a hand-edited or exported .tat file can't take down the whole
+// load (see CompileFilterRegularExpressions and the issue this fixed).
+// f.XML.Text keeps the original, still-invalid pattern text so the filter
+// editor shows it as-is for the user to fix.
+func makeFilter(index int, XML FilterXML) (Filter, error) {
 
 	var f Filter
 
 	f.XML = XML
-
-	// Translate individual fields for ease of use
-	if f.XML.Enabled == "y" {
-		f.IsEnabled = true
-	} else {
-		f.IsEnabled = false
-	}
+	f.IsEnabled = f.XML.Enabled == "y"
 	f.CaseSensitive = f.XML.CaseSensitive == "y"
 	f.Excluding = f.XML.Excluding == "y"
+	f.BackColor = fmt.Sprintf("#%s", strings.ToUpper(f.XML.BackColor))
 
 	regex, err := CompileRegex(XML.Text, f.CaseSensitive)
 	if err != nil {
-		fmt.Println(err)
-		return f, err
+		f.IsEnabled = false
+		f.Regex = *neverMatchRegex
+		desc := XML.Description
+		if desc == "" {
+			desc = fmt.Sprintf("filter #%d", index+1)
+		} else {
+			desc = fmt.Sprintf("filter #%d (%q)", index+1, desc)
+		}
+		return f, fmt.Errorf("%s: disabled, invalid regex %q: %w", desc, XML.Text, err)
 	}
 	f.Regex = regex
-
-	f.BackColor = fmt.Sprintf("#%s", strings.ToUpper(f.XML.BackColor))
 
 	return f, nil
 }
 
-func CompileFilterRegularExpressions(filterSettings TextAnalysisToolSettings) ([]Filter, error) {
+// CompileFilterRegularExpressions compiles every filter in filterSettings.
+// A filter whose regex fails to compile is disabled and kept in the
+// returned slice (see makeFilter) rather than aborting the whole load, so a
+// single bad filter in an otherwise-valid file doesn't prevent using the
+// rest; its error is instead collected into the returned warnings slice for
+// the caller to log/surface. A nil warnings slice means every filter
+// compiled cleanly.
+func CompileFilterRegularExpressions(filterSettings TextAnalysisToolSettings) ([]Filter, []error) {
 	var filters []Filter
+	var warnings []error
 
-	for _, XMLFilter := range filterSettings.Filters {
-		f, err := makeFilter(XMLFilter)
+	for i, XMLFilter := range filterSettings.Filters {
+		f, err := makeFilter(i, XMLFilter)
 		if err != nil {
-			fmt.Println(err)
-			return filters, err
+			warnings = append(warnings, err)
 		}
 		filters = append(filters, f)
 	}
 
-	return filters, nil
+	return filters, warnings
 }
 
 // filterToXML converts a Filter's live state back into a FilterXML for

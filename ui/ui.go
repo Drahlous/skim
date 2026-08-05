@@ -94,6 +94,9 @@ func renderStatusLine(m model) string {
 	if m.saveStatus != "" {
 		line += "  |  " + m.saveStatus
 	}
+	if m.startupWarning != "" {
+		line += "  |  " + m.startupWarning
+	}
 	return line
 }
 
@@ -266,6 +269,12 @@ type model struct {
 	fileMeta       filterfiles.TextAnalysisToolSettings // version/showOnlyFilteredLines to preserve on save
 	filtersDirty   bool                                 // whether filters have changed since the last save
 	saveStatus     string                               // last save attempt's outcome, shown in the status line
+
+	// startupWarning summarizes any filters that were disabled at load time
+	// because their regex failed to compile (see filterfiles.
+	// CompileFilterRegularExpressions), so that's visible in the running UI
+	// and not just in the messages printed before the TUI took the screen.
+	startupWarning string
 }
 
 var baseStyle = lipgloss.NewStyle().
@@ -288,8 +297,26 @@ func (m model) paneStyle(want Focus) lipgloss.Style {
 	return baseStyle
 }
 
+// startupWarningSummary condenses the errors from filterfiles.
+// CompileFilterRegularExpressions (each already identifying its own
+// offending filter by index/description) into one status-line-sized
+// string, since the status line has room for a summary, not a
+// per-filter dump. An empty warnings slice yields an empty string, i.e. no
+// startup warning to show. Full detail is also printed once to stdout
+// before the TUI takes the screen (see run() in skim.go), so nothing is
+// lost by summarizing here.
+func startupWarningSummary(warnings []error) string {
+	if len(warnings) == 0 {
+		return ""
+	}
+	if len(warnings) == 1 {
+		return fmt.Sprintf("startup warning: %v", warnings[0])
+	}
+	return fmt.Sprintf("startup warning: %d filters disabled, invalid regex (see terminal output above)", len(warnings))
+}
+
 // Define the initial state for the application
-func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFilePath string, fileMeta filterfiles.TextAnalysisToolSettings) model {
+func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFilePath string, fileMeta filterfiles.TextAnalysisToolSettings, warnings []error) model {
 	var lines []string
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
@@ -314,6 +341,7 @@ func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFi
 		keyMap:         keyMap,
 		filterFilePath: filterFilePath,
 		fileMeta:       fileMeta,
+		startupWarning: startupWarningSummary(warnings),
 	}
 }
 
@@ -870,8 +898,11 @@ func (m model) View() string {
 	return s
 }
 
-// Run the program by passing the initial model to tea.NewProgram, then run
-func RunUI(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFilePath string, fileMeta filterfiles.TextAnalysisToolSettings, usingStdinLog bool) {
+// Run the program by passing the initial model to tea.NewProgram, then run.
+// warnings carries any per-filter load warnings from filterfiles.
+// CompileFilterRegularExpressions (e.g. a disabled filter due to an invalid
+// regex) through to the running UI; pass nil if there are none.
+func RunUI(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFilePath string, fileMeta filterfiles.TextAnalysisToolSettings, usingStdinLog bool, warnings []error) {
 	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion()}
 	if usingStdinLog {
 		// The log's bufio.Scanner has already fully drained stdin above, so
@@ -881,7 +912,7 @@ func RunUI(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFilePath 
 		opts = append(opts, tea.WithInputTTY())
 	}
 
-	p := tea.NewProgram(initialModel(filters, scanner, filterFilePath, fileMeta), opts...)
+	p := tea.NewProgram(initialModel(filters, scanner, filterFilePath, fileMeta, warnings), opts...)
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("An error occured: %v", err)
 		os.Exit(1)

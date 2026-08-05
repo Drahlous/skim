@@ -56,7 +56,7 @@ func benchmarkView(b *testing.B, n int) {
 
 	filters := genBenchModelFilters(b)
 	scanner := bufio.NewScanner(strings.NewReader(genBenchLog(n)))
-	m := initialModel(filters, scanner, filepath.Join(b.TempDir(), "filters.tat"), filterfiles.TextAnalysisToolSettings{})
+	m := initialModel(filters, scanner, filepath.Join(b.TempDir(), "filters.tat"), filterfiles.TextAnalysisToolSettings{}, nil)
 
 	newM, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 60})
 	m = newM.(model)

@@ -116,9 +116,9 @@ func TestCompileFilterRegularExpressions(t *testing.T) {
 		},
 	}
 
-	filters, err := CompileFilterRegularExpressions(settings)
-	if err != nil {
-		t.Fatalf("CompileFilterRegularExpressions returned unexpected error: %v", err)
+	filters, warnings := CompileFilterRegularExpressions(settings)
+	if len(warnings) != 0 {
+		t.Fatalf("CompileFilterRegularExpressions returned unexpected warnings: %v", warnings)
 	}
 	if len(filters) != 3 {
 		t.Fatalf("got %d filters, want 3", len(filters))
@@ -150,15 +150,44 @@ func TestCompileFilterRegularExpressions(t *testing.T) {
 	}
 }
 
+// TestCompileFilterRegularExpressionsInvalidRegex covers the issue this
+// fixed: a filter with an invalid regex must not abort the whole load. It
+// should come back disabled (regardless of its own enabled="y") with a safe
+// fallback regex, its original (invalid) text preserved for editing, and a
+// warning identifying it by index/description -- while the other, valid
+// filters in the same file are unaffected.
 func TestCompileFilterRegularExpressionsInvalidRegex(t *testing.T) {
 	settings := TextAnalysisToolSettings{
 		Filters: []FilterXML{
-			{Enabled: "y", Text: "([unclosed"},
+			{Enabled: "y", BackColor: "87cefa", Text: "^debug"},
+			{Enabled: "y", Description: "broken", BackColor: "ff0000", Text: "([unclosed"},
 		},
 	}
 
-	if _, err := CompileFilterRegularExpressions(settings); err == nil {
-		t.Fatal("CompileFilterRegularExpressions with invalid regex returned no error")
+	filters, warnings := CompileFilterRegularExpressions(settings)
+	if len(filters) != 2 {
+		t.Fatalf("got %d filters, want 2 (the invalid one should be disabled, not dropped)", len(filters))
+	}
+	if !filters[0].IsEnabled {
+		t.Error("filters[0].IsEnabled = false, want the valid filter unaffected by the other filter's bad regex")
+	}
+
+	bad := filters[1]
+	if bad.IsEnabled {
+		t.Error("filters[1].IsEnabled = true, want it forced disabled despite enabled=\"y\" in the file")
+	}
+	if bad.XML.Text != "([unclosed" {
+		t.Errorf("filters[1].XML.Text = %q, want the original invalid pattern preserved for editing", bad.XML.Text)
+	}
+	if bad.Regex.MatchString("anything") {
+		t.Error("filters[1].Regex matched a line, want a safe never-match fallback")
+	}
+
+	if len(warnings) != 1 {
+		t.Fatalf("got %d warnings, want exactly 1 for the single invalid filter", len(warnings))
+	}
+	if !strings.Contains(warnings[0].Error(), "broken") {
+		t.Errorf("warning %q does not identify the offending filter by its description", warnings[0].Error())
 	}
 }
 
@@ -300,9 +329,9 @@ func TestExcludingAttributeParsedFromXML(t *testing.T) {
 		},
 	}
 
-	filters, err := CompileFilterRegularExpressions(settings)
-	if err != nil {
-		t.Fatalf("CompileFilterRegularExpressions returned unexpected error: %v", err)
+	filters, warnings := CompileFilterRegularExpressions(settings)
+	if len(warnings) != 0 {
+		t.Fatalf("CompileFilterRegularExpressions returned unexpected warnings: %v", warnings)
 	}
 
 	if !filters[0].Excluding {
@@ -339,9 +368,9 @@ func TestWriteFilterFileRoundTrips(t *testing.T) {
 		t.Errorf("ShowOnlyFilteredLines = %q, want %q (preserved from meta)", settings.ShowOnlyFilteredLines, "True")
 	}
 
-	got, err := CompileFilterRegularExpressions(settings)
-	if err != nil {
-		t.Fatalf("CompileFilterRegularExpressions returned unexpected error: %v", err)
+	got, warnings := CompileFilterRegularExpressions(settings)
+	if len(warnings) != 0 {
+		t.Fatalf("CompileFilterRegularExpressions returned unexpected warnings: %v", warnings)
 	}
 	if len(got) != 2 {
 		t.Fatalf("got %d filters, want 2", len(got))

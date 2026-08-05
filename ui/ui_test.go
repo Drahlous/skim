@@ -48,7 +48,7 @@ func newTestModel(t *testing.T, filters []filterfiles.Filter, lines string) mode
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	scanner := bufio.NewScanner(strings.NewReader(lines))
-	return initialModel(filters, scanner, filepath.Join(t.TempDir(), "filters.tat"), filterfiles.TextAnalysisToolSettings{ShowOnlyFilteredLines: "True"})
+	return initialModel(filters, scanner, filepath.Join(t.TempDir(), "filters.tat"), filterfiles.TextAnalysisToolSettings{ShowOnlyFilteredLines: "True"}, nil)
 }
 
 func TestActiveScopes(t *testing.T) {
@@ -266,7 +266,7 @@ func TestInitialModelHideUnmatchedFromFileMeta(t *testing.T) {
 			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 			scanner := bufio.NewScanner(strings.NewReader("line one\n"))
 			meta := filterfiles.TextAnalysisToolSettings{ShowOnlyFilteredLines: tt.showOnlyFilteredLines}
-			m := initialModel(nil, scanner, filepath.Join(t.TempDir(), "filters.tat"), meta)
+			m := initialModel(nil, scanner, filepath.Join(t.TempDir(), "filters.tat"), meta, nil)
 
 			if m.hideUnmatched != tt.want {
 				t.Errorf("hideUnmatched = %v, want %v", m.hideUnmatched, tt.want)
@@ -1545,6 +1545,61 @@ func TestRenderStatusLineShowsDirtyAndSaveStatus(t *testing.T) {
 	out := renderStatusLine(m)
 	if !strings.Contains(out, "saved to /tmp/x.tat") {
 		t.Errorf("status line missing save status, got: %q", out)
+	}
+}
+
+// TestRenderStatusLineShowsStartupWarning covers the issue this fixed: a
+// filter disabled at load time because its regex failed to compile (see
+// filterfiles.CompileFilterRegularExpressions) must be visible somewhere in
+// the running UI, not just in messages printed before the TUI took the
+// screen.
+func TestRenderStatusLineShowsStartupWarning(t *testing.T) {
+	m := newTestModel(t, []filterfiles.Filter{mustFilter(t, "a")}, "line one\n")
+
+	if strings.Contains(renderStatusLine(m), "startup warning") {
+		t.Error("status line shows a startup warning with none set, want none")
+	}
+
+	m.startupWarning = "startup warning: 1 filter disabled"
+	out := renderStatusLine(m)
+	if !strings.Contains(out, "startup warning: 1 filter disabled") {
+		t.Errorf("status line missing startup warning, got: %q", out)
+	}
+}
+
+func TestStartupWarningSummary(t *testing.T) {
+	if got := startupWarningSummary(nil); got != "" {
+		t.Errorf("startupWarningSummary(nil) = %q, want empty string", got)
+	}
+
+	single := []error{fmt.Errorf(`filter #2 ("bad"): disabled, invalid regex "(": missing closing )`)}
+	got := startupWarningSummary(single)
+	if !strings.Contains(got, "bad") {
+		t.Errorf("startupWarningSummary with one warning = %q, want it to name the offending filter", got)
+	}
+
+	multi := []error{fmt.Errorf("filter #1: bad"), fmt.Errorf("filter #2: also bad")}
+	got = startupWarningSummary(multi)
+	if !strings.Contains(got, "2") {
+		t.Errorf("startupWarningSummary with two warnings = %q, want it to mention the count", got)
+	}
+}
+
+// TestInitialModelSetsStartupWarningFromCompileWarnings covers the wiring
+// from run() (skim.go) through RunUI to the model: warnings returned by
+// filterfiles.CompileFilterRegularExpressions must end up visible in the
+// initial model's status line via startupWarning.
+func TestInitialModelSetsStartupWarningFromCompileWarnings(t *testing.T) {
+	scanner := bufio.NewScanner(strings.NewReader("line one\n"))
+	warnings := []error{fmt.Errorf(`filter #1 ("bad"): disabled, invalid regex "(": missing closing )`)}
+
+	m := initialModel(nil, scanner, filepath.Join(t.TempDir(), "filters.tat"), filterfiles.TextAnalysisToolSettings{}, warnings)
+
+	if m.startupWarning == "" {
+		t.Fatal("initialModel with non-empty warnings left startupWarning empty")
+	}
+	if !strings.Contains(renderStatusLine(m), m.startupWarning) {
+		t.Error("renderStatusLine does not include the initial model's startupWarning")
 	}
 }
 
