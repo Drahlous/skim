@@ -310,7 +310,7 @@ func initialModel(filters []filterfiles.Filter, scanner *bufio.Scanner, filterFi
 			Cursor: 0,
 		},
 		focus:          LogFocus,
-		hideUnmatched:  true,
+		hideUnmatched:  filterfiles.HideUnmatchedByDefault(fileMeta),
 		keyMap:         keyMap,
 		filterFilePath: filterFilePath,
 		fileMeta:       fileMeta,

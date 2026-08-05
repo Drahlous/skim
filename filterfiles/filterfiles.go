@@ -171,6 +171,14 @@ func filterToXML(f Filter) FilterXML {
 	}
 }
 
+// HideUnmatchedByDefault reports whether meta's showOnlyFilteredLines
+// attribute requests that non-matching log lines start out hidden. TAT's own
+// default when the attribute is absent (or unrecognized) is "False", i.e.
+// show everything, matching WriteFilterFile's default.
+func HideUnmatchedByDefault(meta TextAnalysisToolSettings) bool {
+	return strings.EqualFold(meta.ShowOnlyFilteredLines, "True")
+}
+
 // WriteFilterFile serializes filters back to a .tat file at path, the
 // inverse of ReadFilterFile + CompileFilterRegularExpressions. meta supplies
 // the root element's version/showOnlyFilteredLines attributes (normally the
