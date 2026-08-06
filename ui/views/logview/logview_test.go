@@ -208,6 +208,22 @@ func TestMakeTableSanitizesControlCharacters(t *testing.T) {
 	}
 }
 
+func TestMakeTableStripsAnsiEscapeSequences(t *testing.T) {
+	v := LogView{Lines: []string{"\x1b[33mWARNING\x1b[0m: something happened"}}
+	table := v.MakeTable(100, 30, nil, false, 0)
+	rows := table.Rows()
+
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if strings.ContainsAny(rows[0][1], "\x1b[]") {
+		t.Errorf("row content %q still contains ANSI escape sequence junk", rows[0][1])
+	}
+	if !strings.Contains(rows[0][1], "WARNING") || !strings.Contains(rows[0][1], "something happened") {
+		t.Errorf("row content %q lost surrounding text", rows[0][1])
+	}
+}
+
 func TestFindNextWrapsAndSkipsCurrentLine(t *testing.T) {
 	v := LogView{Lines: []string{"apple", "banana", "cherry", "banana split"}, Cursor: 1}
 	re := mustRegex(t, "banana")

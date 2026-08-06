@@ -271,12 +271,21 @@ func buildRow(i int, line string, ms matchState, filters []filterfiles.Filter) t
 	return table.Row{fmt.Sprintf("%d", lineNumber), line}
 }
 
-// sanitizeControlChars strips ASCII control characters (0x00-0x1F) that
-// would otherwise corrupt the table's rendering -- e.g. a raw \r makes the
-// terminal overwrite the line number/left border with whatever follows it
-// on the same line. Tabs are handled separately by buildRow before this
-// runs, so any tab reaching here is dropped rather than expanded.
+// ansiCSIPattern matches ANSI/CSI escape sequences (e.g. "\x1b[33m",
+// "\x1b[0m") -- an ESC byte followed by '[', an optional parameter/
+// intermediate byte run, and a single final letter.
+var ansiCSIPattern = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
+
+// sanitizeControlChars strips ANSI/CSI escape sequences and ASCII control
+// characters (0x00-0x1F) that would otherwise corrupt the table's
+// rendering -- e.g. a raw \r makes the terminal overwrite the line
+// number/left border with whatever follows it on the same line, and an
+// unstripped CSI sequence like "\x1b[33m" leaves literal "[33m" bracket
+// junk behind once the lone ESC byte is removed. Tabs are handled
+// separately by buildRow before this runs, so any tab reaching here is
+// dropped rather than expanded.
 func sanitizeControlChars(line string) string {
+	line = ansiCSIPattern.ReplaceAllString(line, "")
 	return strings.Map(func(r rune) rune {
 		if r < 0x20 {
 			return -1
